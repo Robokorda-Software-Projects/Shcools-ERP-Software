@@ -1,0 +1,150 @@
+﻿'use client'
+
+import { useAuth } from '@/contexts/AuthContext'
+import { useRouter, usePathname } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import Link from 'next/link'
+import { 
+  Home, 
+  Users, 
+  GraduationCap, 
+  FileText, 
+  Calendar, 
+  Bell,
+  LogOut,
+  School,
+  Settings
+} from 'lucide-react'
+
+interface DashboardLayoutProps {
+  children: React.ReactNode
+  title: string
+}
+
+export default function DashboardLayout({ children, title }: DashboardLayoutProps) {
+  const { profile, signOut } = useAuth()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  const handleSignOut = async () => {
+    await signOut()
+    router.push('/login')
+  }
+
+  // Define nav items per role
+  const getNavItems = () => {
+    if (!profile) return []
+
+    const role = profile.role
+
+    if (role === 'super_admin') {
+      return [
+        { href: '/dashboard', icon: Home, label: 'Dashboard' },
+        { href: '/dashboard/schools', icon: School, label: 'Schools' },
+        { href: '/dashboard/classes', icon: GraduationCap, label: 'All Classes' },
+        { href: '/dashboard/students', icon: Users, label: 'All Students' },
+        { href: '/dashboard/exams', icon: FileText, label: 'All Exams' },
+        { href: '/dashboard/reports', icon: FileText, label: 'Reports' },
+      ]
+    }
+
+    if (role === 'school_admin') {
+      return [
+        { href: '/dashboard', icon: Home, label: 'Dashboard' },
+        { href: '/dashboard/classes', icon: GraduationCap, label: 'Classes' },
+        { href: '/dashboard/students', icon: Users, label: 'Students' },
+        { href: '/dashboard/teachers', icon: Users, label: 'Teachers' },
+        { href: '/dashboard/exams', icon: FileText, label: 'Exams' },
+        { href: '/dashboard/attendance', icon: Calendar, label: 'Attendance' },
+        { href: '/dashboard/announcements', icon: Bell, label: 'Announcements' },
+      ]
+    }
+
+    if (role === 'teacher') {
+      return [
+        { href: '/dashboard', icon: Home, label: 'Dashboard' },
+        { href: '/dashboard/classes', icon: GraduationCap, label: 'My Classes' },
+        { href: '/dashboard/exams', icon: FileText, label: 'Exams' },
+        { href: '/dashboard/attendance', icon: Calendar, label: 'Attendance' },
+        { href: '/dashboard/students', icon: Users, label: 'Students' },
+      ]
+    }
+
+    if (role === 'student') {
+      return [
+        { href: '/dashboard', icon: Home, label: 'Dashboard' },
+        { href: '/dashboard/grades', icon: FileText, label: 'My Grades' },
+        { href: '/dashboard/attendance', icon: Calendar, label: 'My Attendance' },
+        { href: '/dashboard/assignments', icon: FileText, label: 'Assignments' },
+        { href: '/dashboard/announcements', icon: Bell, label: 'Announcements' },
+      ]
+    }
+
+    if (role === 'parent') {
+      return [
+        { href: '/dashboard', icon: Home, label: 'Dashboard' },
+        { href: '/dashboard/children', icon: Users, label: 'My Children' },
+        { href: '/dashboard/grades', icon: FileText, label: 'Grades' },
+        { href: '/dashboard/attendance', icon: Calendar, label: 'Attendance' },
+        { href: '/dashboard/announcements', icon: Bell, label: 'Announcements' },
+      ]
+    }
+
+    return []
+  }
+
+  const navItems = getNavItems()
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar */}
+      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+        <div className="p-6 border-b border-gray-200">
+          <h1 className="text-xl font-bold text-gray-800">School ERP</h1>
+          <p className="text-sm text-gray-500 mt-1">{profile?.full_name}</p>
+          <p className="text-xs text-gray-400 capitalize">{profile?.role?.replace('_', ' ')}</p>
+        </div>
+        
+        <nav className="flex-1 p-4 space-y-1">
+          {navItems.map((item) => {
+            const Icon = item.icon
+            const isActive = pathname === item.href
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                  isActive 
+                    ? 'bg-blue-50 text-blue-600 font-medium' 
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span>{item.label}</span>
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div className="p-4 border-t border-gray-200">
+          <Button 
+            onClick={handleSignOut} 
+            variant="outline" 
+            className="w-full justify-start text-gray-700 hover:text-red-600 hover:border-red-300"
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Sign Out
+          </Button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-auto">
+        <div className="p-8">
+          <h2 className="text-3xl font-bold text-gray-800 mb-6">{title}</h2>
+          {children}
+        </div>
+      </main>
+    </div>
+  )
+}
