@@ -157,7 +157,7 @@ Three layers (defense in depth):
 - Auto-generated when creating students
 - Used as login username
 
-## 📦 What You Get
+## 📦 What You Will Get
 
 ```
 Frontend/
