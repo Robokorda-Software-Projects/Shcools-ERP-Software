@@ -32,6 +32,7 @@ interface Exam {
   total_marks: number
   school_id: string
   school_name: string
+  school_type: string
   class_id: string
   class_name: string
   subject_id: string
