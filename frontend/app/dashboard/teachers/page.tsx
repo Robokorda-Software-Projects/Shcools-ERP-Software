@@ -31,6 +31,7 @@ interface Teacher {
   email: string
   school_id: string
   school_name: string
+  school_type: string
   subjects: string[]
   classes: string[]
   assignment_count: number
