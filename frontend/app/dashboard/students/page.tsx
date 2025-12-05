@@ -174,7 +174,6 @@ export default function StudentsPage() {
   }
 
   const generateStudentUsername = (schoolCode: string) => {
-    // Generate 8-digit random number for student ID
     const randomNum = Math.floor(10000000 + Math.random() * 90000000)
     return `${schoolCode}-ST-${randomNum}`
   }-ST-${randomNum}`
@@ -658,4 +657,5 @@ export default function StudentsPage() {
     </DashboardLayout>
   )
 }
+
 
