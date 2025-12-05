@@ -4,164 +4,206 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
-import { Loader2, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronUp, TrendingUp, Award, FileText } from 'lucide-react'
+
+interface Subject {
+  subject_id: string
+  subject_name: string
+  exam_count: number
+  average_percentage: number | null
+  best_grade: string | null
+  total_marks_obtained: number
+  total_marks_possible: number
+}
 
 interface ExamResult {
   exam_id: string
   exam_title: string
-  subject_name: string
   exam_date: string
   total_marks: number
   marks_obtained: number
   percentage: number
   grade: string
-  remarks: string | null
-  graded_at: string | null
+  subject_name: string
 }
 
-export default function StudentGradesPage() {
+export default function MyGradesPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [results, setResults] = useState<ExamResult[]>([])
-  const [loading, setLoading] = useState(true)
+  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [examResults, setExamResults] = useState<ExamResult[]>([])
   const [studentInfo, setStudentInfo] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [expandedSubject, setExpandedSubject] = useState<string | null>(null)
+  
+  const [filterSubject, setFilterSubject] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login')
     }
-  }, [user, authLoading, router])
+    if (!authLoading && profile?.role !== 'student') {
+      router.push('/dashboard')
+    }
+  }, [user, profile, authLoading, router])
 
   useEffect(() => {
-    if (profile && profile.role === 'student') {
-      fetchGrades()
+    if (profile?.role === 'student') {
+      loadData()
     }
   }, [profile])
 
-  const fetchGrades = async () => {
-    try {
-      setLoading(true)
+  const loadData = async () => {
+    setLoading(true)
 
-      const { data: studentData, error: studentError } = await supabase
-        .from('students')
-        .select(`
-          id,
-          roll_number,
-          classes(
-            grade_level,
-            section
-          )
-        `)
-        .eq('user_id', profile?.id)
-        .single()
+    const { data: studentData } = await supabase
+      .from('students')
+      .select(`
+        id,
+        class_id,
+        classes(grade_level, section, school_id, schools(name))
+      `)
+      .eq('user_id', profile?.id)
+      .single()
 
-      if (studentError) throw studentError
-      if (!studentData) {
-        toast.error('Student record not found')
-        return
-      }
+    setStudentInfo(studentData)
 
-      setStudentInfo(studentData)
-
-      const { data: resultsData, error: resultsError } = await supabase
+    if (studentData) {
+      const { data: resultsData } = await supabase
         .from('exam_results')
         .select(`
-          exam_id,
           marks_obtained,
           percentage,
           grade,
-          remarks,
-          graded_at,
-          exams!inner(
-            title,
-            exam_date,
-            total_marks,
-            subjects(name)
-          )
+          exams(id, title, exam_date, total_marks, subject_id, subjects(name))
         `)
         .eq('student_id', studentData.id)
-        .order('exams(exam_date)', { ascending: false })
+        .not('marks_obtained', 'is', null)
 
-      if (resultsError) throw resultsError
+      const subjectMap = new Map<string, { 
+        name: string
+        percentages: number[]
+        grades: string[]
+        marksObtained: number[]
+        marksPossible: number[]
+      }>()
 
-      const transformedResults = resultsData?.map((r: any) => ({
-        exam_id: r.exam_id,
-        exam_title: r.exams.title,
-        subject_name: r.exams.subjects?.name || 'Unknown',
-        exam_date: r.exams.exam_date,
-        total_marks: r.exams.total_marks,
-        marks_obtained: parseFloat(r.marks_obtained),
-        percentage: parseFloat(r.percentage),
+      resultsData?.forEach((result: any) => {
+        const subjectId = result.exams?.subject_id
+        const subjectName = result.exams?.subjects?.name
+        if (!subjectId || !subjectName) return
+
+        if (!subjectMap.has(subjectId)) {
+          subjectMap.set(subjectId, { 
+            name: subjectName, 
+            percentages: [], 
+            grades: [],
+            marksObtained: [],
+            marksPossible: []
+          })
+        }
+        const subject = subjectMap.get(subjectId)!
+        subject.percentages.push(result.percentage)
+        subject.grades.push(result.grade)
+        subject.marksObtained.push(result.marks_obtained)
+        subject.marksPossible.push(result.exams?.total_marks)
+      })
+
+      const subjectsArray: Subject[] = Array.from(subjectMap.entries()).map(([subjectId, data]) => ({
+        subject_id: subjectId,
+        subject_name: data.name,
+        exam_count: data.percentages.length,
+        average_percentage: data.percentages.reduce((sum, p) => sum + p, 0) / data.percentages.length,
+        best_grade: data.grades.sort()[0],
+        total_marks_obtained: data.marksObtained.reduce((sum, m) => sum + m, 0),
+        total_marks_possible: data.marksPossible.reduce((sum, m) => sum + m, 0)
+      }))
+
+      setSubjects(subjectsArray)
+    }
+
+    setLoading(false)
+  }
+
+  const loadExamResults = async (subjectId: string) => {
+    if (!studentInfo) return
+
+    const { data: resultsData } = await supabase
+      .from('exam_results')
+      .select(`
+        marks_obtained,
+        percentage,
+        grade,
+        exams(id, title, exam_date, total_marks, subject_id, subjects(name))
+      `)
+      .eq('student_id', studentInfo.id)
+      .not('marks_obtained', 'is', null)
+
+    const filtered = resultsData
+      ?.filter((r: any) => r.exams?.subject_id === subjectId)
+      .map((r: any) => ({
+        exam_id: r.exams?.id,
+        exam_title: r.exams?.title,
+        exam_date: r.exams?.exam_date,
+        total_marks: r.exams?.total_marks,
+        marks_obtained: r.marks_obtained,
+        percentage: r.percentage,
         grade: r.grade,
-        remarks: r.remarks,
-        graded_at: r.graded_at,
-      })) || []
+        subject_name: r.exams?.subjects?.name
+      }))
+      .sort((a: any, b: any) => new Date(b.exam_date).getTime() - new Date(a.exam_date).getTime()) || []
 
-      setResults(transformedResults)
-    } catch (error: any) {
-      console.error('Error fetching grades:', error)
-      toast.error('Failed to load grades')
-    } finally {
-      setLoading(false)
+    setExamResults(filtered)
+  }
+
+  const handleSubjectClick = async (subjectId: string) => {
+    if (expandedSubject === subjectId) {
+      setExpandedSubject(null)
+      setExamResults([])
+    } else {
+      setExpandedSubject(subjectId)
+      await loadExamResults(subjectId)
     }
   }
 
-  const stats = {
-    totalExams: results.length,
-    averagePercentage: results.length > 0
-      ? (results.reduce((sum, r) => sum + r.percentage, 0) / results.length).toFixed(2)
-      : '0',
-    highestGrade: results.length > 0
-      ? ['A', 'B', 'C', 'D', 'E', 'F'][Math.min(...results.map(r => ['A', 'B', 'C', 'D', 'E', 'F'].indexOf(r.grade)))]
-      : null,
-    lowestGrade: results.length > 0
-      ? ['A', 'B', 'C', 'D', 'E', 'F'][Math.max(...results.map(r => ['A', 'B', 'C', 'D', 'E', 'F'].indexOf(r.grade)))]
-      : null,
-  }
+  const filteredSubjects = subjects.filter(subject => {
+    if (filterSubject !== 'all' && subject.subject_id !== filterSubject) return false
+    if (searchQuery && !subject.subject_name.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    return true
+  })
 
-  const getGradeColor = (grade: string) => {
-    const colors: Record<string, string> = {
-      A: 'bg-green-500',
-      B: 'bg-blue-500',
-      C: 'bg-yellow-500',
-      D: 'bg-orange-500',
-      E: 'bg-red-400',
-      F: 'bg-red-600',
-    }
-    return colors[grade] || 'bg-gray-500'
-  }
+  const overallAverage = subjects.length > 0
+    ? subjects.reduce((sum, s) => sum + (s.average_percentage || 0), 0) / subjects.length
+    : 0
 
-  const getPerformanceTrend = (percentage: number) => {
-    if (percentage >= 75) return <TrendingUp className="h-4 w-4 text-green-600" />
-    if (percentage >= 50) return <Minus className="h-4 w-4 text-yellow-600" />
-    return <TrendingDown className="h-4 w-4 text-red-600" />
-  }
+  const totalExams = subjects.reduce((sum, s) => sum + s.exam_count, 0)
+
+  const bestSubject = subjects.length > 0
+    ? subjects.reduce((best, current) => 
+        (current.average_percentage || 0) > (best.average_percentage || 0) ? current : best
+      )
+    : null
 
   if (authLoading || loading) {
-    return (
-      <DashboardLayout title="My Grades">
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </DashboardLayout>
-    )
+    return <DashboardLayout title="My Grades"><div>Loading...</div></DashboardLayout>
   }
 
-  if (!user || !profile) {
-    return null
-  }
-
-  if (profile?.role !== 'student') {
+  if (!studentInfo) {
     return (
       <DashboardLayout title="My Grades">
         <Card>
-          <CardContent className="pt-6">
-            <p className="text-gray-600">This page is only accessible to students.</p>
+          <CardContent className="py-12 text-center">
+            <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500">No student record found</p>
           </CardContent>
         </Card>
       </DashboardLayout>
@@ -171,129 +213,154 @@ export default function StudentGradesPage() {
   return (
     <DashboardLayout title="My Grades">
       <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold">My Academic Performance</h1>
+            <p className="text-gray-600">
+              {studentInfo.classes?.grade_level} {studentInfo.classes?.section} - {studentInfo.classes?.schools?.name}
+            </p>
+          </div>
+        </div>
+
         <Card>
-          <CardHeader>
-            <CardTitle>My Exam Results</CardTitle>
-            <CardDescription>
-              {studentInfo && (
-                <span>
-                  {studentInfo.classes?.grade_level} {studentInfo.classes?.section} - Roll: {studentInfo.roll_number}
-                </span>
-              )}
-            </CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle className="text-lg">Filters</CardTitle></CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-4 mb-6">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">Total Exams</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.totalExams}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">Average Score</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.averagePercentage}%</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">Highest Grade</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.highestGrade || 'N/A'}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">Lowest Grade</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.lowestGrade || 'N/A'}</div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Exam</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Marks</TableHead>
-                    <TableHead className="text-right">Percentage</TableHead>
-                    <TableHead>Grade</TableHead>
-                    <TableHead>Trend</TableHead>
-                    <TableHead>Remarks</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {results.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center text-gray-500 py-8">
-                        No exam results available yet. Your grades will appear here once exams are graded.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    results.map((result) => (
-                      <TableRow key={result.exam_id}>
-                        <TableCell className="font-medium">{result.exam_title}</TableCell>
-                        <TableCell>{result.subject_name}</TableCell>
-                        <TableCell>{new Date(result.exam_date).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right font-medium">
-                          {result.marks_obtained} / {result.total_marks}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {result.percentage.toFixed(1)}%
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={getGradeColor(result.grade)}>{result.grade}</Badge>
-                        </TableCell>
-                        <TableCell>{getPerformanceTrend(result.percentage)}</TableCell>
-                        <TableCell className="text-sm text-gray-600">{result.remarks || '-'}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <h4 className="text-sm font-semibold mb-2">Grading Scale</h4>
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-green-500">A</Badge>
-                  <span className="text-gray-600">90-100%</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-blue-500">B</Badge>
-                  <span className="text-gray-600">80-89%</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-yellow-500">C</Badge>
-                  <span className="text-gray-600">70-79%</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-orange-500">D</Badge>
-                  <span className="text-gray-600">60-69%</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-red-400">E</Badge>
-                  <span className="text-gray-600">50-59%</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-red-600">F</Badge>
-                  <span className="text-gray-600">&lt;50%</span>
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Subject</Label>
+                <Select value={filterSubject} onValueChange={setFilterSubject}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Subjects</SelectItem>
+                    {subjects.map((subj) => <SelectItem key={subj.subject_id} value={subj.subject_id}>{subj.subject_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Search</Label>
+                <Input placeholder="Search subjects..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               </div>
             </div>
           </CardContent>
         </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium opacity-90">Overall Average</CardTitle>
+              <TrendingUp className="h-4 w-4" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">{overallAverage.toFixed(1)}%</div>
+              <p className="text-xs opacity-80 mt-1">Across all subjects</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium opacity-90">Total Exams</CardTitle>
+              <FileText className="h-4 w-4" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">{totalExams}</div>
+              <p className="text-xs opacity-80 mt-1">Completed this term</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium opacity-90">Best Subject</CardTitle>
+              <Award className="h-4 w-4" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{bestSubject?.subject_name || 'N/A'}</div>
+              <p className="text-xs opacity-80 mt-1">
+                {bestSubject ? `${bestSubject.average_percentage?.toFixed(1)}%` : 'No data'}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div>
+          <h2 className="text-xl font-bold mb-4">Subject Performance</h2>
+          <div className="space-y-2">
+            {filteredSubjects.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center text-gray-500">
+                  No exam results available yet
+                </CardContent>
+              </Card>
+            ) : (
+              filteredSubjects.map((subject) => {
+                const isExpanded = expandedSubject === subject.subject_id
+
+                return (
+                  <Card key={subject.subject_id} className="cursor-pointer hover:shadow-md transition-all" onClick={() => handleSubjectClick(subject.subject_id)}>
+                    <CardHeader className="py-4">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-4">
+                          <BookOpen className="w-8 h-8 text-blue-500" />
+                          <div>
+                            <CardTitle className="text-lg">{subject.subject_name}</CardTitle>
+                            <p className="text-sm text-gray-500">{subject.exam_count} exams completed</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <div className="text-2xl font-bold">{subject.average_percentage?.toFixed(1)}%</div>
+                            <p className="text-xs text-gray-500">{subject.total_marks_obtained}/{subject.total_marks_possible} marks</p>
+                          </div>
+                          <Badge className={
+                            subject.best_grade === 'A' ? 'bg-green-100 text-green-800 text-lg' :
+                            subject.best_grade === 'B' ? 'bg-blue-100 text-blue-800 text-lg' :
+                            subject.best_grade === 'C' ? 'bg-yellow-100 text-yellow-800 text-lg' :
+                            subject.best_grade === 'D' ? 'bg-orange-100 text-orange-800 text-lg' :
+                            'bg-red-100 text-red-800 text-lg'
+                          }>{subject.best_grade || 'N/A'}</Badge>
+                          {isExpanded ? <ChevronUp /> : <ChevronDown />}
+                        </div>
+                      </div>
+                    </CardHeader>
+
+                    {isExpanded && (
+                      <CardContent className="border-t pt-4">
+                        <h3 className="text-sm font-semibold mb-3">Exam History</h3>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Exam</TableHead>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Marks</TableHead>
+                              <TableHead>Percentage</TableHead>
+                              <TableHead>Grade</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {examResults.map((result) => (
+                              <TableRow key={result.exam_id}>
+                                <TableCell className="font-medium">{result.exam_title}</TableCell>
+                                <TableCell className="text-sm text-gray-500">{result.exam_date}</TableCell>
+                                <TableCell>{result.marks_obtained}/{result.total_marks}</TableCell>
+                                <TableCell>{result.percentage.toFixed(1)}%</TableCell>
+                                <TableCell>
+                                  <Badge className={
+                                    result.grade === 'A' ? 'bg-green-100 text-green-800' :
+                                    result.grade === 'B' ? 'bg-blue-100 text-blue-800' :
+                                    result.grade === 'C' ? 'bg-yellow-100 text-yellow-800' :
+                                    result.grade === 'D' ? 'bg-orange-100 text-orange-800' :
+                                    'bg-red-100 text-red-800'
+                                  }>{result.grade}</Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    )}
+                  </Card>
+                )
+              })
+            )}
+          </div>
+        </div>
       </div>
     </DashboardLayout>
   )

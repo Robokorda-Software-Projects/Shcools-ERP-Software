@@ -4,266 +4,221 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
-import { Loader2, TrendingUp, TrendingDown, Minus, Users } from 'lucide-react'
+import { UserCircle, BookOpen, ChevronDown, ChevronUp, GraduationCap, TrendingUp } from 'lucide-react'
 
 interface Child {
   id: string
   user_id: string
-  full_name: string
   username: string
-  roll_number: string
+  full_name: string
+  class_id: string
   grade_level: string
   section: string
-  class_id: string
+  school_name: string
+  average_grade: number | null
+  total_exams: number
+}
+
+interface Subject {
+  subject_id: string
+  subject_name: string
+  exam_count: number
+  average_percentage: number | null
+  best_grade: string | null
 }
 
 interface ExamResult {
   exam_id: string
   exam_title: string
-  subject_name: string
   exam_date: string
   total_marks: number
   marks_obtained: number
   percentage: number
   grade: string
-  remarks: string | null
-  graded_at: string | null
+  subject_name: string
 }
 
-interface ChildWithResults extends Child {
-  results: ExamResult[]
-  stats: {
-    totalExams: number
-    averagePercentage: string
-    highestGrade: string | null
-    lowestGrade: string | null
-  }
-}
-
-export default function ParentGradesViewPage() {
+export default function ChildrenGradesPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [children, setChildren] = useState<ChildWithResults[]>([])
+  const [children, setChildren] = useState<Child[]>([])
+  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [examResults, setExamResults] = useState<ExamResult[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedChild, setSelectedChild] = useState<string | null>(null)
+  const [expandedChild, setExpandedChild] = useState<string | null>(null)
+  const [expandedSubject, setExpandedSubject] = useState<string | null>(null)
+  
+  const [selectedChild, setSelectedChild] = useState<string>('all')
+  const [selectedSubject, setSelectedSubject] = useState<string>('all')
 
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login')
     }
-  }, [user, authLoading, router])
+    if (!authLoading && profile?.role !== 'parent') {
+      router.push('/dashboard')
+    }
+  }, [user, profile, authLoading, router])
 
   useEffect(() => {
-    if (profile && profile.role === 'parent') {
-      fetchChildrenAndGrades()
+    if (profile?.role === 'parent') {
+      loadData()
     }
   }, [profile])
 
-  const fetchChildrenAndGrades = async () => {
-    try {
-      setLoading(true)
+  const loadData = async () => {
+    setLoading(true)
 
-      console.log('=== FETCHING CHILDREN ===')
-      console.log('Parent ID:', profile?.id)
+    const { data: childrenData } = await supabase
+      .from('students')
+      .select(`
+        id,
+        user_id,
+        class_id,
+        profiles!students_user_id_fkey(username, full_name),
+        classes(grade_level, section, school_id, schools(name))
+      `)
+      .eq('parent_id', profile?.id)
 
-      const { data: childrenData, error: childrenError } = await supabase
-        .from('students')
-        .select('id, user_id, roll_number, class_id, profiles!students_user_id_fkey(full_name, username), classes(grade_level, section)')
-        .eq('parent_id', profile?.id)
+    const childrenWithStats = await Promise.all(
+      (childrenData || []).map(async (child: any) => {
+        const { data: resultsData } = await supabase
+          .from('exam_results')
+          .select('percentage, grade')
+          .eq('student_id', child.id)
+          .not('percentage', 'is', null)
 
-      console.log('Children data:', childrenData)
-      console.log('Children error:', childrenError)
+        const avgGrade = resultsData && resultsData.length > 0
+          ? resultsData.reduce((sum, r) => sum + (r.percentage || 0), 0) / resultsData.length
+          : null
 
-      if (childrenError) throw childrenError
+        return {
+          id: child.id,
+          user_id: child.user_id,
+          username: child.profiles?.username || 'Unknown',
+          full_name: child.profiles?.full_name || 'Unknown',
+          class_id: child.class_id,
+          grade_level: child.classes?.grade_level || 'N/A',
+          section: child.classes?.section || '',
+          school_name: child.classes?.schools?.name || 'Unknown',
+          average_grade: avgGrade,
+          total_exams: resultsData?.length || 0
+        }
+      })
+    )
 
-      if (!childrenData || childrenData.length === 0) {
-        toast.info('No children linked to your account yet.')
-        setLoading(false)
-        return
+    setChildren(childrenWithStats)
+    setLoading(false)
+  }
+
+  const loadSubjects = async (childId: string) => {
+    const { data: resultsData } = await supabase
+      .from('exam_results')
+      .select(`
+        percentage,
+        grade,
+        exams(subject_id, subjects(name))
+      `)
+      .eq('student_id', childId)
+      .not('percentage', 'is', null)
+
+    const subjectMap = new Map<string, { name: string; percentages: number[]; grades: string[] }>()
+
+    resultsData?.forEach((result: any) => {
+      const subjectId = result.exams?.subject_id
+      const subjectName = result.exams?.subjects?.name
+      if (!subjectId || !subjectName) return
+
+      if (!subjectMap.has(subjectId)) {
+        subjectMap.set(subjectId, { name: subjectName, percentages: [], grades: [] })
       }
+      subjectMap.get(subjectId)!.percentages.push(result.percentage)
+      subjectMap.get(subjectId)!.grades.push(result.grade)
+    })
 
-      const childrenWithResults = await Promise.all(
-        childrenData.map(async (child: any) => {
-          console.log(`\n=== PROCESSING CHILD: ${child.profiles?.full_name} ===`)
-          console.log('Student ID:', child.id)
+    const subjectsArray: Subject[] = Array.from(subjectMap.entries()).map(([subjectId, data]) => ({
+      subject_id: subjectId,
+      subject_name: data.name,
+      exam_count: data.percentages.length,
+      average_percentage: data.percentages.reduce((sum, p) => sum + p, 0) / data.percentages.length,
+      best_grade: data.grades.sort()[0]
+    }))
 
-          const { data: resultsData, error: resultsError } = await supabase
-            .from('exam_results')
-            .select('exam_id, marks_obtained, percentage, grade, remarks, graded_at')
-            .eq('student_id', child.id)
+    setSubjects(subjectsArray)
+  }
 
-          console.log('Results data:', resultsData)
-          console.log('Results error:', resultsError)
+  const loadExamResults = async (childId: string, subjectId: string) => {
+    const { data: resultsData } = await supabase
+      .from('exam_results')
+      .select(`
+        marks_obtained,
+        percentage,
+        grade,
+        exams(id, title, exam_date, total_marks, subject_id, subjects(name))
+      `)
+      .eq('student_id', childId)
+      .not('marks_obtained', 'is', null)
 
-          if (resultsError) {
-            console.error('Error fetching results:', resultsError)
-          }
+    const filtered = resultsData
+      ?.filter((r: any) => r.exams?.subject_id === subjectId)
+      .map((r: any) => ({
+        exam_id: r.exams?.id,
+        exam_title: r.exams?.title,
+        exam_date: r.exams?.exam_date,
+        total_marks: r.exams?.total_marks,
+        marks_obtained: r.marks_obtained,
+        percentage: r.percentage,
+        grade: r.grade,
+        subject_name: r.exams?.subjects?.name
+      })) || []
 
-          if (!resultsData || resultsData.length === 0) {
-            console.log('No results found for this student')
-            return {
-              id: child.id,
-              user_id: child.user_id,
-              full_name: child.profiles?.full_name || 'Unknown',
-              username: child.profiles?.username || 'Unknown',
-              roll_number: child.roll_number,
-              grade_level: child.classes?.grade_level || 'Unknown',
-              section: child.classes?.section || '',
-              class_id: child.class_id,
-              results: [],
-              stats: { totalExams: 0, averagePercentage: '0', highestGrade: null, lowestGrade: null },
-            }
-          }
+    setExamResults(filtered)
+  }
 
-          console.log(`Found ${resultsData.length} results`)
-
-          const examIds = resultsData.map(r => r.exam_id)
-          console.log('Exam IDs:', examIds)
-
-          const { data: examsData, error: examsError } = await supabase
-            .from('exams')
-            .select('id, title, exam_date, total_marks, subject_id')
-            .in('id', examIds)
-
-          console.log('Exams data:', examsData)
-          console.log('Exams error:', examsError)
-
-          const subjectIds = examsData?.map(e => e.subject_id).filter(Boolean) || []
-          console.log('Subject IDs:', subjectIds)
-
-          const { data: subjectsData, error: subjectsError } = await supabase
-            .from('subjects')
-            .select('id, name')
-            .in('id', subjectIds)
-
-          console.log('Subjects data:', subjectsData)
-          console.log('Subjects error:', subjectsError)
-
-          const results: ExamResult[] = resultsData.map((result) => {
-            const exam = examsData?.find(e => e.id === result.exam_id)
-            const subject = subjectsData?.find(s => s.id === exam?.subject_id)
-
-            console.log('Building result:', {
-              exam_id: result.exam_id,
-              exam_title: exam?.title,
-              subject_name: subject?.name,
-              marks: result.marks_obtained,
-              grade: result.grade,
-            })
-
-            return {
-              exam_id: result.exam_id,
-              exam_title: exam?.title || 'Unknown Exam',
-              subject_name: subject?.name || 'Unknown Subject',
-              exam_date: exam?.exam_date || '',
-              total_marks: exam?.total_marks || 0,
-              marks_obtained: parseFloat(result.marks_obtained),
-              percentage: parseFloat(result.percentage),
-              grade: result.grade,
-              remarks: result.remarks,
-              graded_at: result.graded_at,
-            }
-          }).sort((a, b) => new Date(b.exam_date).getTime() - new Date(a.exam_date).getTime())
-
-          console.log('Final results array:', results)
-
-          const stats = {
-            totalExams: results.length,
-            averagePercentage: results.length > 0
-              ? (results.reduce((sum, r) => sum + r.percentage, 0) / results.length).toFixed(2)
-              : '0',
-            highestGrade: results.length > 0
-              ? ['A', 'B', 'C', 'D', 'E', 'F'][Math.min(...results.map(r => ['A', 'B', 'C', 'D', 'E', 'F'].indexOf(r.grade)))]
-              : null,
-            lowestGrade: results.length > 0
-              ? ['A', 'B', 'C', 'D', 'E', 'F'][Math.max(...results.map(r => ['A', 'B', 'C', 'D', 'E', 'F'].indexOf(r.grade)))]
-              : null,
-          }
-
-          console.log('Stats:', stats)
-
-          return {
-            id: child.id,
-            user_id: child.user_id,
-            full_name: child.profiles?.full_name || 'Unknown',
-            username: child.profiles?.username || 'Unknown',
-            roll_number: child.roll_number,
-            grade_level: child.classes?.grade_level || 'Unknown',
-            section: child.classes?.section || '',
-            class_id: child.class_id,
-            results,
-            stats,
-          }
-        })
-      )
-
-      console.log('\n=== FINAL CHILDREN WITH RESULTS ===')
-      console.log(childrenWithResults)
-
-      setChildren(childrenWithResults)
-      
-      if (childrenWithResults.length > 0) {
-        setSelectedChild(childrenWithResults[0].id)
-      }
-    } catch (error: any) {
-      console.error('Error fetching data:', error)
-      toast.error('Failed to load grades')
-    } finally {
-      setLoading(false)
+  const handleChildClick = async (childId: string) => {
+    if (expandedChild === childId) {
+      setExpandedChild(null)
+      setSubjects([])
+    } else {
+      setExpandedChild(childId)
+      await loadSubjects(childId)
     }
   }
 
-  const getGradeColor = (grade: string) => {
-    const colors: Record<string, string> = {
-      A: 'bg-green-500', B: 'bg-blue-500', C: 'bg-yellow-500',
-      D: 'bg-orange-500', E: 'bg-red-400', F: 'bg-red-600',
+  const handleSubjectClick = async (childId: string, subjectId: string) => {
+    if (expandedSubject === subjectId) {
+      setExpandedSubject(null)
+      setExamResults([])
+    } else {
+      setExpandedSubject(subjectId)
+      await loadExamResults(childId, subjectId)
     }
-    return colors[grade] || 'bg-gray-500'
   }
 
-  const getPerformanceTrend = (percentage: number) => {
-    if (percentage >= 75) return <TrendingUp className="h-4 w-4 text-green-600" />
-    if (percentage >= 50) return <Minus className="h-4 w-4 text-yellow-600" />
-    return <TrendingDown className="h-4 w-4 text-red-600" />
-  }
+  const filteredChildren = children.filter(child => {
+    if (selectedChild !== 'all' && child.id !== selectedChild) return false
+    return true
+  })
 
   if (authLoading || loading) {
-    return (
-      <DashboardLayout title="Children Grades">
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </DashboardLayout>
-    )
-  }
-
-  if (!user || !profile) return null
-
-  if (profile?.role !== 'parent') {
-    return (
-      <DashboardLayout title="Children Grades">
-        <Card><CardContent className="pt-6"><p className="text-gray-600">This page is only for parents.</p></CardContent></Card>
-      </DashboardLayout>
-    )
+    return <DashboardLayout title="My Children's Grades"><div>Loading...</div></DashboardLayout>
   }
 
   if (children.length === 0) {
     return (
-      <DashboardLayout title="Children Grades">
+      <DashboardLayout title="My Children's Grades">
         <Card>
-          <CardHeader><CardTitle>My Children</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-center py-12">
-              <Users className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No Children Linked</h3>
-              <p className="text-gray-600">Contact school administration.</p>
-            </div>
+          <CardContent className="py-12 text-center">
+            <UserCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 mb-2">No children linked to your account</p>
+            <p className="text-sm text-gray-400">Please contact the school to link your children</p>
           </CardContent>
         </Card>
       </DashboardLayout>
@@ -271,66 +226,175 @@ export default function ParentGradesViewPage() {
   }
 
   return (
-    <DashboardLayout title="Children Grades">
-      <Card>
-        <CardHeader><CardTitle>Academic Performance</CardTitle></CardHeader>
-        <CardContent>
-          <Tabs value={selectedChild || ''} onValueChange={setSelectedChild}>
-            <TabsList className="grid w-full" style={{ gridTemplateColumns: `repeat(${children.length}, 1fr)` }}>
-              {children.map((child) => (
-                <TabsTrigger key={child.id} value={child.id}>{child.full_name}</TabsTrigger>
-              ))}
-            </TabsList>
+    <DashboardLayout title="My Children's Grades">
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <p className="text-gray-600">View your children's academic performance</p>
+        </div>
 
-            {children.map((child) => (
-              <TabsContent key={child.id} value={child.id} className="space-y-6">
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold text-lg">{child.full_name}</h3>
-                    <p className="text-sm text-gray-600">{child.grade_level} {child.section} - Roll: {child.roll_number}</p>
+        {children.length > 1 && (
+          <Card>
+            <CardHeader><CardTitle className="text-lg">Filters</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Select Child</Label>
+                  <Select value={selectedChild} onValueChange={setSelectedChild}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Children</SelectItem>
+                      {children.map((child) => <SelectItem key={child.id} value={child.id}>{child.full_name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Subject Filter</Label>
+                  <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Subjects</SelectItem>
+                      {subjects.map((subj) => <SelectItem key={subj.subject_id} value={subj.subject_id}>{subj.subject_name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Total Children</CardTitle></CardHeader>
+            <CardContent><div className="text-4xl font-bold">{filteredChildren.length}</div></CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Average Grade</CardTitle></CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">
+                {filteredChildren.filter(c => c.average_grade !== null).length > 0
+                  ? (filteredChildren.reduce((sum, c) => sum + (c.average_grade || 0), 0) / filteredChildren.filter(c => c.average_grade !== null).length).toFixed(1) + '%'
+                  : 'N/A'}
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Total Exams</CardTitle></CardHeader>
+            <CardContent><div className="text-4xl font-bold">{filteredChildren.reduce((sum, c) => sum + c.total_exams, 0)}</div></CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          {filteredChildren.map((child) => {
+            const isExpanded = expandedChild === child.id
+
+            return (
+              <div key={child.id}>
+                <Card className="cursor-pointer hover:shadow-lg transition-all" onClick={() => handleChildClick(child.id)}>
+                  <CardHeader className="pb-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-4">
+                        <UserCircle className="w-12 h-12 text-gray-400" />
+                        <div>
+                          <CardTitle className="text-xl">{child.full_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{child.username}</p>
+                          <p className="text-sm text-gray-500">{child.grade_level} {child.section} - {child.school_name}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-right">
+                          <div className="flex items-center gap-1">
+                            <TrendingUp className="w-4 h-4 text-green-600" />
+                            <span className="font-bold text-lg">{child.average_grade !== null ? child.average_grade.toFixed(1) + '%' : 'N/A'}</span>
+                          </div>
+                          <p className="text-xs text-gray-500">{child.total_exams} exams</p>
+                        </div>
+                        {isExpanded ? <ChevronUp /> : <ChevronDown />}
+                      </div>
+                    </div>
+                  </CardHeader>
+                </Card>
+
+                {isExpanded && subjects.length > 0 && (
+                  <div className="ml-8 mt-2 space-y-2">
+                    {subjects.filter(subj => selectedSubject === 'all' || subj.subject_id === selectedSubject).map((subject) => {
+                      const isSubjectExpanded = expandedSubject === subject.subject_id
+
+                      return (
+                        <Card key={subject.subject_id} className="cursor-pointer hover:shadow-md" onClick={(e) => { e.stopPropagation(); handleSubjectClick(child.id, subject.subject_id) }}>
+                          <CardHeader className="py-3">
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-3">
+                                <BookOpen className="w-6 h-6 text-blue-500" />
+                                <div>
+                                  <CardTitle className="text-base">{subject.subject_name}</CardTitle>
+                                  <p className="text-xs text-gray-500">{subject.exam_count} exams</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge className="text-lg">{subject.average_percentage?.toFixed(1)}%</Badge>
+                                <Badge className={
+                                  subject.best_grade === 'A' ? 'bg-green-100 text-green-800' :
+                                  subject.best_grade === 'B' ? 'bg-blue-100 text-blue-800' :
+                                  subject.best_grade === 'C' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }>{subject.best_grade || 'N/A'}</Badge>
+                                {isSubjectExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                              </div>
+                            </div>
+                          </CardHeader>
+
+                          {isSubjectExpanded && (
+                            <CardContent className="border-t pt-3">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Exam</TableHead>
+                                    <TableHead>Date</TableHead>
+                                    <TableHead>Marks</TableHead>
+                                    <TableHead>Percentage</TableHead>
+                                    <TableHead>Grade</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {examResults.map((result) => (
+                                    <TableRow key={result.exam_id}>
+                                      <TableCell className="font-medium">{result.exam_title}</TableCell>
+                                      <TableCell className="text-sm text-gray-500">{result.exam_date}</TableCell>
+                                      <TableCell>{result.marks_obtained}/{result.total_marks}</TableCell>
+                                      <TableCell>{result.percentage.toFixed(1)}%</TableCell>
+                                      <TableCell>
+                                        <Badge className={
+                                          result.grade === 'A' ? 'bg-green-100 text-green-800' :
+                                          result.grade === 'B' ? 'bg-blue-100 text-blue-800' :
+                                          result.grade === 'C' ? 'bg-yellow-100 text-yellow-800' :
+                                          result.grade === 'D' ? 'bg-orange-100 text-orange-800' :
+                                          'bg-red-100 text-red-800'
+                                        }>{result.grade}</Badge>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </CardContent>
+                          )}
+                        </Card>
+                      )
+                    })}
                   </div>
-                  <Badge variant="outline">{child.username}</Badge>
-                </div>
+                )}
 
-                <div className="grid gap-4 md:grid-cols-4">
-                  <Card><CardHeader className="pb-3"><CardTitle className="text-sm font-medium">Total</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{child.stats.totalExams}</div></CardContent></Card>
-                  <Card><CardHeader className="pb-3"><CardTitle className="text-sm font-medium">Average</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{child.stats.averagePercentage}%</div></CardContent></Card>
-                  <Card><CardHeader className="pb-3"><CardTitle className="text-sm font-medium">Highest</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{child.stats.highestGrade || 'N/A'}</div></CardContent></Card>
-                  <Card><CardHeader className="pb-3"><CardTitle className="text-sm font-medium">Lowest</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{child.stats.lowestGrade || 'N/A'}</div></CardContent></Card>
-                </div>
-
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Exam</TableHead><TableHead>Subject</TableHead><TableHead>Date</TableHead>
-                      <TableHead className="text-right">Marks</TableHead><TableHead className="text-right">%</TableHead>
-                      <TableHead>Grade</TableHead><TableHead>Trend</TableHead><TableHead>Remarks</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {child.results.length === 0 ? (
-                      <TableRow><TableCell colSpan={8} className="text-center py-8">No results yet</TableCell></TableRow>
-                    ) : (
-                      child.results.map((result) => (
-                        <TableRow key={result.exam_id}>
-                          <TableCell className="font-medium">{result.exam_title}</TableCell>
-                          <TableCell>{result.subject_name}</TableCell>
-                          <TableCell>{new Date(result.exam_date).toLocaleDateString()}</TableCell>
-                          <TableCell className="text-right">{result.marks_obtained}/{result.total_marks}</TableCell>
-                          <TableCell className="text-right">{result.percentage.toFixed(1)}%</TableCell>
-                          <TableCell><Badge className={getGradeColor(result.grade)}>{result.grade}</Badge></TableCell>
-                          <TableCell>{getPerformanceTrend(result.percentage)}</TableCell>
-                          <TableCell>{result.remarks || '-'}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </TabsContent>
-            ))}
-          </Tabs>
-        </CardContent>
-      </Card>
+                {isExpanded && subjects.length === 0 && (
+                  <Card className="ml-8 mt-2">
+                    <CardContent className="py-6 text-center text-gray-500">
+                      No exam results available yet
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </DashboardLayout>
   )
 }
