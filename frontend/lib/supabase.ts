@@ -23,6 +23,7 @@ export interface School {
   id: string
   name: string
   school_code?: string
+  school_type?: string
   address?: string
   contact_email?: string
   contact_phone?: string
@@ -57,6 +58,13 @@ export interface Exam {
   description?: string
   exam_date: string
   total_marks: number
+  school_type?: string
+  subject_id?: string
+  school_name?: string
+  class_name?: string
+  subject_name?: string
+  graded_count?: number
+  total_students?: number
   created_by: string
   created_at: string
 }
