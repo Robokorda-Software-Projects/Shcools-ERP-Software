@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -10,62 +10,62 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
-import { Plus, Users, Search, GraduationCap, Filter, X } from 'lucide-react'
+import { Plus, School, Users, GraduationCap, ChevronDown, ChevronUp, Edit, Trash2, UserCircle, Link2, Calendar } from 'lucide-react'
 
-interface StudentWithDetails {
+interface School {
   id: string
-  roll_number: string
+  name: string
+  school_code: string
+  school_type: string
+  student_count: number
+}
+
+interface Student {
+  id: string
+  user_id: string
+  username: string
+  full_name: string
+  email: string
+  class_id: string | null
+  grade_level: string
+  section: string
+  school_id: string
+  school_name: string
+  parent_id: string | null
+  parent_name: string | null
   admission_date: string
-  profiles: {
-    username: string
-    full_name: string
-    email: string
-  }
-  classes: {
-    id: string
-    grade_level: string
-    section: string
-    school_id: string
-    schools: {
-      name: string
-      school_code: string
-    }
-  } | null
+  expanded: boolean
 }
 
 export default function StudentsPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [students, setStudents] = useState<StudentWithDetails[]>([])
-  const [schools, setSchools] = useState<any[]>([])
+  const [schools, setSchools] = useState<School[]>([])
+  const [students, setStudents] = useState<Student[]>([])
   const [classes, setClasses] = useState<any[]>([])
+  const [parents, setParents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [expandedSchool, setExpandedSchool] = useState<string | null>(null)
+  const [expandedStudent, setExpandedStudent] = useState<string | null>(null)
   
   // Filters
-  const [selectedSchoolId, setSelectedSchoolId] = useState<string>('all')
-  const [selectedGradeLevel, setSelectedGradeLevel] = useState<string>('all')
-  const [selectedSection, setSelectedSection] = useState<string>('all')
-  const [searchTerm, setSearchTerm] = useState('')
-  
-  // Form
+  const [filterSchoolType, setFilterSchoolType] = useState<string>('all')
+  const [filterSchool, setFilterSchool] = useState<string>('all')
+  const [filterGrade, setFilterGrade] = useState<string>('all')
+  const [filterSection, setFilterSection] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Create dialog
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [selectedClassId, setSelectedClassId] = useState('')
-  const [rollNumber, setRollNumber] = useState('')
+  const [selectedSchoolId, setSelectedSchoolId] = useState('')
   const [submitting, setSubmitting] = useState(false)
-
-  const gradeLevels = [
-    'ECD A', 'ECD B', 'ECD C',
-    'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7',
-    'Form 1', 'Form 2', 'Form 3', 'Form 4',
-    'Lower 6', 'Upper 6'
-  ]
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -75,93 +75,107 @@ export default function StudentsPage() {
 
   useEffect(() => {
     if (profile) {
-      if (profile.role === 'super_admin') {
-        loadSchools()
-      } else if (profile.school_id) {
-        setSelectedSchoolId(profile.school_id)
-      }
-      loadStudents()
+      loadData()
     }
   }, [profile])
 
-  useEffect(() => {
-    loadClasses()
-  }, [selectedSchoolId])
+  const loadData = async () => {
+    setLoading(true)
 
-  const loadSchools = async () => {
-    const { data, error } = await supabase
+    // Load schools
+    let schoolsQuery = supabase
       .from('schools')
-      .select('*')
+      .select('id, name, school_code, school_type')
+      .order('school_type')
       .order('name')
 
-    if (!error && data) {
-      setSchools(data)
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      schoolsQuery = schoolsQuery.eq('id', profile.school_id)
     }
-  }
 
-  const loadClasses = async () => {
-    let query = supabase
+    const { data: schoolsData, error: schoolsError } = await schoolsQuery
+
+    if (schoolsError) {
+      toast.error('Failed to load schools')
+      console.error(schoolsError)
+    } else {
+      const schoolsWithCount = await Promise.all(
+        (schoolsData || []).map(async (school) => {
+          const { count } = await supabase
+            .from('students')
+            .select('*', { count: 'exact', head: true })
+            .eq('school_id', school.id) // Using school_id from classes join
+          return { ...school, student_count: count || 0 }
+        })
+      )
+      setSchools(schoolsWithCount)
+    }
+
+    // Load classes
+    let classesQuery = supabase
       .from('classes')
-      .select('*, schools(name, school_code)')
+      .select('id, grade_level, section, school_id, schools(name)')
       .order('grade_level')
-      .order('section')
 
-    if (selectedSchoolId && selectedSchoolId !== 'all') {
-      query = query.eq('school_id', selectedSchoolId)
-    } else if (profile?.role !== 'super_admin' && profile?.school_id) {
-      query = query.eq('school_id', profile.school_id)
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      classesQuery = classesQuery.eq('school_id', profile.school_id)
     }
 
-    const { data, error } = await query
+    const { data: classesData } = await classesQuery
+    setClasses(classesData || [])
 
-    if (!error && data) {
-      setClasses(data)
-      if (data.length > 0 && !selectedClassId) {
-        setSelectedClassId(data[0].id)
-      }
-    }
-  }
+    // Load parents
+    const { data: parentsData } = await supabase
+      .from('profiles')
+      .select('id, full_name, username')
+      .eq('role', 'parent')
+    setParents(parentsData || [])
 
-  const loadStudents = async () => {
-    setLoading(true)
-    const { data, error } = await supabase
+    // Load students with all details
+    let studentsQuery = supabase
       .from('students')
       .select(`
-        *,
-        profiles:user_id(username, full_name, email),
-        classes(
-          id,
-          grade_level,
-          section,
-          school_id,
-          schools(name, school_code)
-        )
+        id,
+        user_id,
+        class_id,
+        parent_id,
+        admission_date,
+        profiles!students_user_id_fkey(username, full_name, email),
+        parent:profiles!students_parent_id_fkey(full_name),
+        classes(grade_level, section, school_id, schools(name, school_code, school_type))
       `)
-      .order('created_at', { ascending: false })
 
-    if (error) {
+    const { data: studentsData, error: studentsError } = await studentsQuery
+
+    if (studentsError) {
       toast.error('Failed to load students')
-      console.error(error)
+      console.error(studentsError)
     } else {
-      setStudents(data || [])
+      const transformed = (studentsData || []).map((s: any) => ({
+        id: s.id,
+        user_id: s.user_id,
+        username: s.profiles?.username || 'Unknown',
+        full_name: s.profiles?.full_name || 'Unknown',
+        email: s.profiles?.email || 'N/A',
+        class_id: s.class_id,
+        grade_level: s.classes?.grade_level || 'Not Assigned',
+        section: s.classes?.section || '',
+        school_id: s.classes?.school_id || '',
+        school_name: s.classes?.schools?.name || 'Not Assigned',
+        parent_id: s.parent_id,
+        parent_name: s.parent?.full_name || null,
+        admission_date: s.admission_date,
+        expanded: false
+      }))
+      setStudents(transformed)
     }
+
     setLoading(false)
   }
 
-  const generateStudentUsername = async () => {
-    if (!selectedClassId) return ''
-
-    const classData = classes.find(c => c.id === selectedClassId)
-    if (!classData) return ''
-
-    const schoolCode = classData.schools?.school_code || 'UNKN001'
-    
-    const { count } = await supabase
-      .from('students')
-      .select('*', { count: 'exact', head: true })
-
-    const studentNumber = (count || 0) + 1
-    return `${schoolCode}-ST-${studentNumber.toString().padStart(8, '0')}`
+  const generateStudentUsername = (schoolCode: string) => {
+    const randomNum = Math.floor(10000000 + Math.random() * 90000000)
+    return `${schoolCode}-ST-${randomNum}`
   }
 
   const handleCreateStudent = async (e: React.FormEvent) => {
@@ -169,379 +183,466 @@ export default function StudentsPage() {
     setSubmitting(true)
 
     try {
-      const username = await generateStudentUsername()
-      const classData = classes.find(c => c.id === selectedClassId)
-      const schoolId = classData?.school_id
+      // Get school code
+      const school = schools.find(s => s.id === selectedSchoolId)
+      if (!school) throw new Error('School not found')
 
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const username = generateStudentUsername(school.school_code)
+
+      // Create auth user
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: email,
         password: password,
-        options: {
-          data: {
-            username: username,
-            full_name: fullName,
-            role: 'student',
-            school_id: schoolId
-          }
-        }
+        email_confirm: true,
+        user_metadata: { full_name: fullName }
       })
 
       if (authError) throw authError
 
-      if (authData.user) {
-        const { error: studentError } = await supabase
-          .from('students')
-          .insert({
-            user_id: authData.user.id,
-            class_id: selectedClassId,
-            roll_number: rollNumber,
-            admission_date: new Date().toISOString().split('T')[0]
-          })
-
-        if (studentError) throw studentError
-
-        toast.success('Student created successfully!', {
-          description: `Username: ${username}`,
+      // Create profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: authData.user.id,
+          email: email,
+          username: username,
+          full_name: fullName,
+          role: 'student',
+          school_id: selectedSchoolId
         })
-        
-        setDialogOpen(false)
-        setFullName('')
-        setEmail('')
-        setPassword('')
-        setRollNumber('')
-        loadStudents()
-      }
+
+      if (profileError) throw profileError
+
+      // Create student record
+      const { error: studentError } = await supabase
+        .from('students')
+        .insert({
+          user_id: authData.user.id,
+          class_id: selectedClassId || null,
+          admission_date: new Date().toISOString().split('T')[0]
+        })
+
+      if (studentError) throw studentError
+
+      toast.success('Student created successfully!', { description: `Username: ${username}` })
+      setDialogOpen(false)
+      setFullName('')
+      setEmail('')
+      setPassword('')
+      setSelectedClassId('')
+      setSelectedSchoolId('')
+      loadData()
     } catch (error: any) {
-      toast.error('Failed to create student', {
-        description: error.message,
-      })
+      toast.error('Failed to create student', { description: error.message })
     }
-    
     setSubmitting(false)
   }
 
-  const clearFilters = () => {
-    if (profile?.role === 'super_admin') {
-      setSelectedSchoolId('all')
+  const handleDeleteStudent = async (studentId: string, studentName: string) => {
+    if (!confirm(`Are you sure you want to delete ${studentName}? This will remove all associated data.`)) {
+      return
     }
-    setSelectedGradeLevel('all')
-    setSelectedSection('all')
-    setSearchTerm('')
+
+    const { error } = await supabase
+      .from('students')
+      .delete()
+      .eq('id', studentId)
+
+    if (error) {
+      toast.error('Failed to delete student', { description: error.message })
+    } else {
+      toast.success('Student deleted successfully!')
+      loadData()
+    }
   }
 
-  const filteredStudents = students.filter(student => {
-    const matchesSearch = 
-      student.profiles?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.profiles?.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.roll_number?.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    const matchesSchool = selectedSchoolId === 'all' || 
-      student.classes?.school_id === selectedSchoolId
-    
-    const matchesGrade = selectedGradeLevel === 'all' || 
-      student.classes?.grade_level === selectedGradeLevel
-    
-    const matchesSection = selectedSection === 'all' || 
-      student.classes?.section === selectedSection
-
-    return matchesSearch && matchesSchool && matchesGrade && matchesSection
+  // Filtered data
+  const filteredSchools = schools.filter(school => {
+    if (filterSchoolType !== 'all' && school.school_type !== filterSchoolType) return false
+    if (filterSchool !== 'all' && school.id !== filterSchool) return false
+    return true
   })
 
-  const uniqueSections = Array.from(new Set(
-    students
-      .filter(s => s.classes && (selectedGradeLevel === 'all' || s.classes.grade_level === selectedGradeLevel))
-      .map(s => s.classes?.section)
-      .filter(Boolean)
-  ))
+  const filteredStudents = students.filter(student => {
+    if (filterSchool !== 'all' && student.school_id !== filterSchool) return false
+    if (filterGrade !== 'all' && student.grade_level !== filterGrade) return false
+    if (filterSection !== 'all' && student.section !== filterSection) return false
+    if (searchQuery && !student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) && 
+        !student.username.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    return true
+  })
+
+  const availableGrades = [...new Set(filteredStudents.map(s => s.grade_level))]
+  const availableSections = [...new Set(filteredStudents.map(s => s.section).filter(Boolean))]
 
   if (authLoading || loading) {
     return (
-      <DashboardLayout title="Students">
+      <DashboardLayout title="Students Management">
         <div>Loading...</div>
       </DashboardLayout>
     )
   }
 
-  if (!user || !profile) {
-    return null
-  }
-
-  const canManageStudents = profile.role === 'super_admin' || profile.role === 'school_admin'
-
   return (
-    <DashboardLayout title="Students">
+    <DashboardLayout title="Students Management">
       <div className="space-y-6">
-        {/* Filters Section */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-gray-500" />
-                <CardTitle className="text-base">Filters</CardTitle>
-              </div>
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                <X className="w-3 h-3 mr-1" />
-                Clear All
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <p className="text-gray-600">Manage students across all schools</p>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="w-4 h-4 mr-2" />
+                Create Student
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {profile.role === 'super_admin' && (
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create New Student</DialogTitle>
+                <DialogDescription>Add a new student to the system</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCreateStudent} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>School</Label>
-                  <Select value={selectedSchoolId} onValueChange={setSelectedSchoolId}>
+                  <Label>Full Name *</Label>
+                  <Input
+                    placeholder="e.g., Tanaka Moyo"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email *</Label>
+                  <Input
+                    type="email"
+                    placeholder="student@school.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Password *</Label>
+                  <Input
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>School *</Label>
+                  <Select value={selectedSchoolId} onValueChange={setSelectedSchoolId} required>
                     <SelectTrigger>
-                      <SelectValue placeholder="All Schools" />
+                      <SelectValue placeholder="Select school" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Schools</SelectItem>
                       {schools.map((school) => (
                         <SelectItem key={school.id} value={school.id}>
-                          [{school.school_code}] {school.name}
+                          {school.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-              )}
-              <div className="space-y-2">
-                <Label>Grade Level</Label>
-                <Select value={selectedGradeLevel} onValueChange={setSelectedGradeLevel}>
+                <div className="space-y-2">
+                  <Label>Class (Optional)</Label>
+                  <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {classes
+                        .filter(c => c.school_id === selectedSchoolId)
+                        .map((cls: any) => (
+                          <SelectItem key={cls.id} value={cls.id}>
+                            {cls.grade_level} {cls.section}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? 'Creating...' : 'Create Student'}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {/* Filters */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Filters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div>
+                <Label>School Type</Label>
+                <Select value={filterSchoolType} onValueChange={setFilterSchoolType}>
                   <SelectTrigger>
-                    <SelectValue placeholder="All Grades" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="Primary">Primary</SelectItem>
+                    <SelectItem value="Secondary">Secondary</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>School</Label>
+                <Select value={filterSchool} onValueChange={setFilterSchool}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Schools</SelectItem>
+                    {filteredSchools.map((school) => (
+                      <SelectItem key={school.id} value={school.id}>
+                        {school.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Grade Level</Label>
+                <Select value={filterGrade} onValueChange={setFilterGrade}>
+                  <SelectTrigger>
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Grades</SelectItem>
-                    {gradeLevels.map((level) => (
-                      <SelectItem key={level} value={level}>
-                        {level}
+                    {availableGrades.map((grade) => (
+                      <SelectItem key={grade} value={grade}>
+                        {grade}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
+              <div>
                 <Label>Section</Label>
-                <Select value={selectedSection} onValueChange={setSelectedSection}>
+                <Select value={filterSection} onValueChange={setFilterSection}>
                   <SelectTrigger>
-                    <SelectValue placeholder="All Sections" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Sections</SelectItem>
-                    {uniqueSections.map((section) => (
-                      <SelectItem key={section} value={section as string}>
-                        {section}
+                    {availableSections.map((sec) => (
+                      <SelectItem key={sec} value={sec}>
+                        {sec}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
+              <div>
                 <Label>Search</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
-                    placeholder="Name, username, roll..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
+                <Input
+                  placeholder="Name or username..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <div className="flex justify-between items-center">
-          <div className="text-sm text-gray-600">
-            Showing {filteredStudents.length} of {students.length} students
-          </div>
-          {canManageStudents && (
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-blue-600 hover:bg-blue-700">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Student
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>Add New Student</DialogTitle>
-                  <DialogDescription>
-                    Create a new student account and assign to a class
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleCreateStudent} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="fullName">Full Name *</Label>
-                      <Input
-                        id="fullName"
-                        placeholder="e.g., Tatenda Moyo"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        required
-                        disabled={submitting}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email *</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="student@school.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                        disabled={submitting}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="password">Password *</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        placeholder="Min. 6 characters"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        minLength={6}
-                        disabled={submitting}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="rollNumber">Roll Number</Label>
-                      <Input
-                        id="rollNumber"
-                        placeholder="e.g., 001"
-                        value={rollNumber}
-                        onChange={(e) => setRollNumber(e.target.value)}
-                        disabled={submitting}
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-2">
-                      <Label htmlFor="class">Assign to Class *</Label>
-                      <Select value={selectedClassId} onValueChange={setSelectedClassId} disabled={submitting}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select class" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {classes.map((classItem) => (
-                            <SelectItem key={classItem.id} value={classItem.id}>
-                              {profile.role === 'super_admin' && `[${classItem.schools?.school_code}] `}
-                              {classItem.grade_level} {classItem.section}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-gray-500">Username will be auto-generated</p>
-                    </div>
-                  </div>
-                  <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={submitting}>
-                    {submitting ? 'Creating...' : 'Create Student'}
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-          )}
-        </div>
-
+        {/* Summary Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="bg-linear-to-br from-purple-500 to-purple-600 text-white">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium opacity-90">Total Students</CardTitle>
-              <Users className="h-5 w-5" />
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium opacity-90">Total Schools</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-4xl font-bold">{students.length}</div>
-              <p className="text-xs opacity-75 mt-1">Filtered: {filteredStudents.length}</p>
+              <div className="text-4xl font-bold">{filteredSchools.length}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium opacity-90">Total Students</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">{filteredStudents.length}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium opacity-90">With Parents Linked</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">
+                {filteredStudents.filter(s => s.parent_id).length}
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        {filteredStudents.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Users className="w-16 h-16 text-gray-300 mb-4" />
-              <p className="text-gray-500 mb-4">
-                {students.length === 0 ? 'No students found' : 'No students match your filters'}
-              </p>
-              {students.length > 0 && (
-                <Button onClick={clearFilters} variant="outline">
-                  Clear Filters
-                </Button>
-              )}
-              {canManageStudents && students.length === 0 && (
-                <Button onClick={() => setDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Your First Student
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Students List</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Username</TableHead>
-                    <TableHead>Full Name</TableHead>
-                    <TableHead>Class</TableHead>
-                    <TableHead>Roll Number</TableHead>
-                    {profile.role === 'super_admin' && <TableHead>School</TableHead>}
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredStudents.map((student) => (
-                    <TableRow key={student.id} className="hover:bg-gray-50">
-                      <TableCell>
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {student.profiles?.username}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-medium">{student.profiles?.full_name}</TableCell>
-                      <TableCell>
-                        {student.classes ? (
-                          <div className="flex items-center gap-2">
-                            <GraduationCap className="w-3 h-3 text-gray-400" />
-                            <span className="text-sm">
-                              {student.classes.grade_level} {student.classes.section}
-                            </span>
+        {/* School Cards */}
+        <div className="space-y-6">
+          {['Primary', 'Secondary'].map((schoolType) => {
+            const schoolsOfType = filteredSchools.filter(s => s.school_type === schoolType)
+            if (schoolsOfType.length === 0) return null
+
+            return (
+              <div key={schoolType}>
+                <h2 className="text-2xl font-bold mb-4 flex items-center">
+                  <GraduationCap className="mr-2" />
+                  {schoolType} Schools
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {schoolsOfType.map((school) => {
+                    const schoolStudents = filteredStudents.filter(s => s.school_id === school.id)
+                    const isExpanded = expandedSchool === school.id
+
+                    return (
+                      <div key={school.id} className="space-y-2">
+                        <Card 
+                          className="cursor-pointer hover:shadow-lg transition-all"
+                          onClick={() => setExpandedSchool(isExpanded ? null : school.id)}
+                        >
+                          <CardHeader className="pb-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <CardTitle className="text-lg">{school.name}</CardTitle>
+                                <p className="text-sm text-gray-500">{school.school_code}</p>
+                              </div>
+                              {isExpanded ? <ChevronUp /> : <ChevronDown />}
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center text-gray-600">
+                                <Users className="w-4 h-4 mr-2" />
+                                <span className="text-sm">{schoolStudents.length} Students</span>
+                              </div>
+                              <Badge variant="outline">{school.school_type}</Badge>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Expanded Students */}
+                        {isExpanded && schoolStudents.length > 0 && (
+                          <div className="ml-4 space-y-2 animate-in slide-in-from-top">
+                            {schoolStudents.map((student) => {
+                              const isStudentExpanded = expandedStudent === student.id
+
+                              return (
+                                <Card 
+                                  key={student.id}
+                                  className="cursor-pointer hover:shadow-md transition-all"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setExpandedStudent(isStudentExpanded ? null : student.id)
+                                  }}
+                                >
+                                  <CardHeader className="py-3">
+                                    <div className="flex justify-between items-center">
+                                      <div className="flex items-center gap-3">
+                                        <UserCircle className="w-8 h-8 text-gray-400" />
+                                        <div>
+                                          <CardTitle className="text-base">{student.full_name}</CardTitle>
+                                          <p className="text-xs text-gray-500">{student.username}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge>{student.grade_level} {student.section}</Badge>
+                                        {isStudentExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                      </div>
+                                    </div>
+                                  </CardHeader>
+
+                                  {/* Expanded Student Details */}
+                                  {isStudentExpanded && (
+                                    <CardContent className="space-y-3 border-t pt-3">
+                                      <div className="grid grid-cols-2 gap-3 text-sm">
+                                        <div>
+                                          <span className="text-gray-500">Email:</span>
+                                          <p className="font-medium">{student.email}</p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Class:</span>
+                                          <p className="font-medium">{student.grade_level} {student.section}</p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Parent:</span>
+                                          <p className="font-medium">
+                                            {student.parent_name ? (
+                                              <span className="text-green-600">{student.parent_name}</span>
+                                            ) : (
+                                              <span className="text-yellow-600">Not Linked</span>
+                                            )}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500 flex items-center">
+                                            <Calendar className="w-3 h-3 mr-1" />
+                                            Admission:
+                                          </span>
+                                          <p className="font-medium">{student.admission_date}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-2 pt-2">
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            toast.info('Edit functionality coming in next phase')
+                                          }}
+                                        >
+                                          <Edit className="w-3 h-3 mr-1" />
+                                          Edit
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            router.push('/dashboard/parents')
+                                          }}
+                                        >
+                                          <Link2 className="w-3 h-3 mr-1" />
+                                          Link Parent
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
+                                          variant="destructive"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleDeleteStudent(student.id, student.full_name)
+                                          }}
+                                        >
+                                          <Trash2 className="w-3 h-3 mr-1" />
+                                          Delete
+                                        </Button>
+                                      </div>
+                                    </CardContent>
+                                  )}
+                                </Card>
+                              )
+                            })}
                           </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">Not assigned</span>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
-                          {student.roll_number || 'N/A'}
-                        </Badge>
-                      </TableCell>
-                      {profile.role === 'super_admin' && (
-                        <TableCell>
-                          <Badge variant="outline" className="font-mono text-xs">
-                            {student.classes?.schools?.school_code || 'N/A'}
-                          </Badge>
-                        </TableCell>
-                      )}
-                      <TableCell>
-                        <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
-                          View
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        )}
+
+                        {isExpanded && schoolStudents.length === 0 && (
+                          <Card className="ml-4">
+                            <CardContent className="py-6 text-center text-gray-500">
+                              No students found for this school
+                            </CardContent>
+                          </Card>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </DashboardLayout>
   )
