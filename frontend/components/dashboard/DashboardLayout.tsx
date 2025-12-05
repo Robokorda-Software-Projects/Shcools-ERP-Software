@@ -64,6 +64,9 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
         { href: '/dashboard/classes', icon: GraduationCap, label: 'Classes' },
         { href: '/dashboard/students', icon: Users, label: 'Students' },
         { href: '/dashboard/exams', icon: FileText, label: 'Exams' },
+        { href: '/dashboard/lesson-plans', icon: BookOpen, label: 'Lesson Plans' },
+        { href: '/dashboard/assignments', icon: FileText, label: 'Assignments' },
+        { href: '/dashboard/attendance', icon: Users, label: 'Attendance' },
       ]
     }
 
