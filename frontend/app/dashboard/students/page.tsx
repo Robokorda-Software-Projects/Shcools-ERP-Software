@@ -176,7 +176,6 @@ export default function StudentsPage() {
   const generateStudentUsername = (schoolCode: string) => {
     const randomNum = Math.floor(10000000 + Math.random() * 90000000)
     return `${schoolCode}-ST-${randomNum}`
-  }-ST-${randomNum}`
   }
 
   const handleCreateStudent = async (e: React.FormEvent) => {
