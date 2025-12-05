@@ -330,6 +330,7 @@ export default function StudentsPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                   />
+                  <p className="text-xs text-gray-500">Default: Student123! (can be changed later)</p>
                 </div>
                 <div className="space-y-2">
                   <Label>School *</Label>
@@ -340,15 +341,15 @@ export default function StudentsPage() {
                     <SelectContent>
                       {schools.map((school) => (
                         <SelectItem key={school.id} value={school.id}>
-                          {school.name}
+                          {school.name} ({school.school_code})
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Class (Optional)</Label>
-                  <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+                  <Label>Class *</Label>
+                  <Select value={selectedClassId} onValueChange={setSelectedClassId} required>
                     <SelectTrigger>
                       <SelectValue placeholder="Select class" />
                     </SelectTrigger>
@@ -363,8 +364,16 @@ export default function StudentsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                  <p className="text-sm text-blue-800">
+                    <strong>Student ID:</strong> Will be auto-generated as{' '}
+                    {selectedSchoolId 
+                      ? `${schools.find(s => s.id === selectedSchoolId)?.school_code}-ST-########`
+                      : 'SCHOOL-ST-########'}
+                  </p>
+                </div>
                 <Button type="submit" className="w-full" disabled={submitting}>
-                  {submitting ? 'Creating...' : 'Create Student'}
+                  {submitting ? 'Enrolling Student...' : 'Enroll Student'}
                 </Button>
               </form>
             </DialogContent>
@@ -647,3 +656,5 @@ export default function StudentsPage() {
     </DashboardLayout>
   )
 }
+
+
