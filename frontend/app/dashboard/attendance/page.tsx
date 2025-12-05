@@ -1,591 +1,723 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
-import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Calendar } from '@/components/ui/calendar'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
-import { Popover, PopoverContent, PopoverTrigger } from '@radix-ui/react-popover'
-import { 
-  CalendarIcon, 
-  CheckCircle2, 
-  XCircle, 
-  Clock, 
-  User, 
-  Download, 
-  Save,
-  Filter,
-  Search
-} from 'lucide-react'
-import { format } from 'date-fns'
+import { Loader2, Calendar, CheckCircle, XCircle, Clock, Download, Upload, Users, TrendingUp } from 'lucide-react'
 
 interface Student {
   id: string
-  student_id: string
+  roll_number: string
   full_name: string
-  email: string
-  class_id: string
-}
-
-interface Class {
-  id: string
-  class_name: string
-  grade_level: string
-  section: string
-  teacher_id?: string
+  user_id: string
 }
 
 interface AttendanceRecord {
-  id?: string
+  id: string
   student_id: string
   class_id: string
   date: string
   status: 'present' | 'absent' | 'late' | 'excused'
-  reason?: string
+  remarks: string | null
+  marked_by: string
+  marked_at: string
+  student_name: string
+  roll_number: string
 }
 
-export default function AttendancePage() {
-  const { user, profile, loading } = useAuth()
+interface ClassInfo {
+  id: string
+  grade_level: string
+  section: string
+  student_count: number
+}
+
+interface AttendanceStats {
+  totalDays: number
+  presentDays: number
+  absentDays: number
+  lateDays: number
+  attendanceRate: number
+}
+
+export default function AttendanceRegisterPage() {
+  const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
-  
-  const [classes, setClasses] = useState<Class[]>([])
-  const [selectedClass, setSelectedClass] = useState<string>('')
+  const [classes, setClasses] = useState<ClassInfo[]>([])
   const [students, setStudents] = useState<Student[]>([])
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
-  const [isSaving, setIsSaving] = useState(false)
-  const [loadingData, setLoadingData] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [attendance, setAttendance] = useState<Map<string, string>>(new Map())
+  const [remarks, setRemarks] = useState<Map<string, string>>(new Map())
+  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [selectedClass, setSelectedClass] = useState<string>('')
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [viewDate, setViewDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [activeTab, setActiveTab] = useState<string>('mark')
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [selectedStudent, setSelectedStudent] = useState<string | null>(null)
+  const [studentStats, setStudentStats] = useState<AttendanceStats | null>(null)
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!authLoading && !user) {
       router.push('/login')
     }
-  }, [user, loading, router])
+  }, [user, authLoading, router])
 
   useEffect(() => {
-    if (profile?.role === 'teacher' && user) {
-      fetchTeacherClasses()
+    if (profile) {
+      fetchClasses()
     }
-  }, [profile, user])
+  }, [profile])
 
   useEffect(() => {
     if (selectedClass) {
-      fetchClassStudents()
-      fetchAttendanceRecords()
+      fetchStudents()
+      checkExistingAttendance()
     }
   }, [selectedClass, selectedDate])
 
-  const fetchTeacherClasses = async () => {
-    try {
-      setLoadingData(true)
-      
-      // For demo purposes - in real app, you would query classes assigned to teacher
-      const { data: teacherData } = await supabase
-        .from('teachers')
-        .select('user_id')
-        .eq('user_id', user?.id)
-        .single()
+  useEffect(() => {
+    if (selectedClass && activeTab === 'history') {
+      fetchAttendanceHistory()
+    }
+  }, [selectedClass, viewDate, activeTab])
 
+  const fetchClasses = async () => {
+    try {
+      setLoading(true)
       let query = supabase
         .from('classes')
-        .select('*')
-        .order('grade_level', { ascending: true })
+        .select('id, grade_level, section')
+        .order('grade_level')
 
-      // If teacher exists, filter by teacher_id
-      if (teacherData) {
-        query = query.eq('teacher_id', teacherData.user_id)
+      // Filter by school or teacher assignment
+      if (profile?.role === 'teacher') {
+        // If teacher, show only their assigned classes
+        query = query.eq('class_teacher_id', profile.id)
+      } else if (profile?.role !== 'super_admin' && profile?.school_id) {
+        query = query.eq('school_id', profile.school_id)
       }
 
-      const { data, error } = await query
+      const { data: classData, error } = await query
 
       if (error) throw error
-      setClasses(data || [])
-      
-      // Auto-select first class if available
-      if (data && data.length > 0 && !selectedClass) {
-        setSelectedClass(data[0].id)
+
+      // Get student count for each class
+      const classesWithCount = await Promise.all(
+        (classData || []).map(async (cls) => {
+          const { count } = await supabase
+            .from('students')
+            .select('*', { count: 'exact', head: true })
+            .eq('class_id', cls.id)
+
+          return {
+            id: cls.id,
+            grade_level: cls.grade_level,
+            section: cls.section,
+            student_count: count || 0,
+          }
+        })
+      )
+
+      setClasses(classesWithCount)
+      if (classesWithCount.length > 0) {
+        setSelectedClass(classesWithCount[0].id)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching classes:', error)
       toast.error('Failed to load classes')
     } finally {
-      setLoadingData(false)
+      setLoading(false)
     }
   }
 
-  const fetchClassStudents = async () => {
+  const fetchStudents = async () => {
     try {
       const { data, error } = await supabase
         .from('students')
-        .select('*')
+        .select('id, roll_number, user_id, profiles!students_user_id_fkey(full_name)')
         .eq('class_id', selectedClass)
-        .order('full_name', { ascending: true })
+        .order('roll_number')
 
       if (error) throw error
 
-      // Initialize attendance records for each student
-      const initialAttendance: AttendanceRecord[] = (data || []).map(student => ({
-        student_id: student.id,
-        class_id: selectedClass,
-        date: format(selectedDate, 'yyyy-MM-dd'),
-        status: 'present' // Default to present
+      const studentsList: Student[] = (data || []).map((s: any) => ({
+        id: s.id,
+        roll_number: s.roll_number,
+        full_name: s.profiles?.full_name || 'Unknown',
+        user_id: s.user_id,
       }))
 
-      setStudents(data || [])
-      setAttendance(initialAttendance)
-    } catch (error) {
+      setStudents(studentsList)
+    } catch (error: any) {
       console.error('Error fetching students:', error)
       toast.error('Failed to load students')
     }
   }
 
-  const fetchAttendanceRecords = async () => {
+  const checkExistingAttendance = async () => {
     try {
-      const dateString = format(selectedDate, 'yyyy-MM-dd')
-      
       const { data, error } = await supabase
         .from('attendance')
-        .select('*')
+        .select('student_id, status, remarks')
         .eq('class_id', selectedClass)
-        .eq('date', dateString)
+        .eq('date', selectedDate)
 
       if (error) throw error
 
-      if (data && data.length > 0) {
-        setAttendance(data)
-      }
-    } catch (error) {
-      console.error('Error fetching attendance:', error)
+      const attendanceMap = new Map<string, string>()
+      const remarksMap = new Map<string, string>()
+
+      data?.forEach((record: any) => {
+        attendanceMap.set(record.student_id, record.status)
+        if (record.remarks) {
+          remarksMap.set(record.student_id, record.remarks)
+        }
+      })
+
+      setAttendance(attendanceMap)
+      setRemarks(remarksMap)
+    } catch (error: any) {
+      console.error('Error checking attendance:', error)
     }
   }
 
-  const handleAttendanceChange = (studentId: string, status: AttendanceRecord['status']) => {
-    setAttendance(prev => {
-      const existingIndex = prev.findIndex(record => 
-        record.student_id === studentId && 
-        record.date === format(selectedDate, 'yyyy-MM-dd')
-      )
+  const fetchAttendanceHistory = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select(`
+          id,
+          student_id,
+          class_id,
+          date,
+          status,
+          remarks,
+          marked_by,
+          marked_at,
+          students!attendance_student_id_fkey(
+            roll_number,
+            profiles!students_user_id_fkey(full_name)
+          )
+        `)
+        .eq('class_id', selectedClass)
+        .eq('date', viewDate)
+        .order('students(roll_number)')
 
-      if (existingIndex >= 0) {
-        const updated = [...prev]
-        updated[existingIndex] = { ...updated[existingIndex], status }
-        return updated
-      }
+      if (error) throw error
 
-      return [...prev, {
-        student_id: studentId,
-        class_id: selectedClass,
-        date: format(selectedDate, 'yyyy-MM-dd'),
-        status
-      }]
+      const records: AttendanceRecord[] = (data || []).map((record: any) => ({
+        id: record.id,
+        student_id: record.student_id,
+        class_id: record.class_id,
+        date: record.date,
+        status: record.status,
+        remarks: record.remarks,
+        marked_by: record.marked_by,
+        marked_at: record.marked_at,
+        student_name: record.students?.profiles?.full_name || 'Unknown',
+        roll_number: record.students?.roll_number || 'N/A',
+      }))
+
+      setAttendanceHistory(records)
+    } catch (error: any) {
+      console.error('Error fetching attendance history:', error)
+      toast.error('Failed to load attendance history')
+    }
+  }
+
+  const markAttendance = (studentId: string, status: string) => {
+    const newAttendance = new Map(attendance)
+    newAttendance.set(studentId, status)
+    setAttendance(newAttendance)
+  }
+
+  const markAllPresent = () => {
+    const newAttendance = new Map<string, string>()
+    students.forEach(student => {
+      newAttendance.set(student.id, 'present')
     })
+    setAttendance(newAttendance)
+    toast.success('Marked all students as present')
+  }
+
+  const setRemark = (studentId: string, remark: string) => {
+    const newRemarks = new Map(remarks)
+    if (remark.trim()) {
+      newRemarks.set(studentId, remark)
+    } else {
+      newRemarks.delete(studentId)
+    }
+    setRemarks(newRemarks)
   }
 
   const saveAttendance = async () => {
-    if (!selectedClass) {
-      toast.error('Please select a class first')
+    if (attendance.size === 0) {
+      toast.error('Please mark attendance for at least one student')
       return
     }
 
-    if (attendance.length === 0) {
-      toast.error('No attendance records to save')
-      return
-    }
-
-    setIsSaving(true)
     try {
-      const dateString = format(selectedDate, 'yyyy-MM-dd')
-      
-      // Delete existing records for this date and class
+      setSaving(true)
+
+      // Prepare attendance records
+      const attendanceRecords = Array.from(attendance.entries()).map(([studentId, status]) => ({
+        student_id: studentId,
+        class_id: selectedClass,
+        date: selectedDate,
+        status: status,
+        remarks: remarks.get(studentId) || null,
+        marked_by: profile?.id,
+        school_id: profile?.school_id,
+      }))
+
+      // Delete existing records for this date/class
       await supabase
         .from('attendance')
         .delete()
         .eq('class_id', selectedClass)
-        .eq('date', dateString)
+        .eq('date', selectedDate)
 
       // Insert new records
-      const { error } = await supabase
-        .from('attendance')
-        .insert(attendance.map(record => ({
-          ...record,
-          date: dateString
-        })))
+      const { error } = await supabase.from('attendance').insert(attendanceRecords)
 
       if (error) throw error
 
       toast.success('Attendance saved successfully!')
-    } catch (error) {
+      setAttendance(new Map())
+      setRemarks(new Map())
+    } catch (error: any) {
       console.error('Error saving attendance:', error)
-      toast.error('Failed to save attendance')
+      toast.error('Failed to save attendance: ' + error.message)
     } finally {
-      setIsSaving(false)
+      setSaving(false)
     }
   }
 
-  const generateReport = () => {
-    const csvContent = [
-      ['Student ID', 'Name', 'Date', 'Status'],
-      ...attendance.map(record => {
-        const student = students.find(s => s.id === record.student_id)
-        return [
-          student?.student_id || '',
-          student?.full_name || '',
-          record.date,
-          record.status.toUpperCase()
-        ]
-      })
-    ].map(row => row.join(',')).join('\n')
+  const fetchStudentStats = async (studentId: string) => {
+    try {
+      const startOfMonth = new Date()
+      startOfMonth.setDate(1)
+      const startDate = startOfMonth.toISOString().split('T')[0]
 
-    const blob = new Blob([csvContent], { type: 'text/csv' })
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('status')
+        .eq('student_id', studentId)
+        .gte('date', startDate)
+
+      if (error) throw error
+
+      const totalDays = data?.length || 0
+      const presentDays = data?.filter(r => r.status === 'present').length || 0
+      const absentDays = data?.filter(r => r.status === 'absent').length || 0
+      const lateDays = data?.filter(r => r.status === 'late').length || 0
+      const attendanceRate = totalDays > 0 ? (presentDays / totalDays) * 100 : 0
+
+      setStudentStats({
+        totalDays,
+        presentDays,
+        absentDays,
+        lateDays,
+        attendanceRate,
+      })
+    } catch (error: any) {
+      console.error('Error fetching student stats:', error)
+    }
+  }
+
+  const exportAttendancePDF = async () => {
+    // This is a placeholder - you'll need to implement PDF generation
+    // You can use libraries like jsPDF or pdfmake
+    toast.info('PDF export feature coming soon!')
+    
+    // Example: Create CSV export instead
+    const csvData = attendanceHistory.map(record => ({
+      'Roll Number': record.roll_number,
+      'Student Name': record.student_name,
+      'Date': record.date,
+      'Status': record.status,
+      'Remarks': record.remarks || '',
+    }))
+
+    const csv = [
+      Object.keys(csvData[0]).join(','),
+      ...csvData.map(row => Object.values(row).join(','))
+    ].join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `attendance_${format(selectedDate, 'yyyy-MM-dd')}.csv`
+    a.download = `attendance_${selectedClass}_${viewDate}.csv`
     a.click()
-    
-    toast.success('Report generated successfully!')
   }
 
-  const filteredStudents = students.filter(student =>
-    student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    student.student_id.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  const getStatusCount = (status: AttendanceRecord['status']) => {
-    return attendance.filter(record => record.status === status).length
-  }
-
-  const getStatusColor = (status: AttendanceRecord['status']) => {
-    const colors = {
-      present: 'bg-green-100 text-green-800 border-green-200',
-      absent: 'bg-red-100 text-red-800 border-red-200',
-      late: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      excused: 'bg-blue-100 text-blue-800 border-blue-200'
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'present':
+        return <Badge className="bg-green-500">Present</Badge>
+      case 'absent':
+        return <Badge className="bg-red-500">Absent</Badge>
+      case 'late':
+        return <Badge className="bg-yellow-500">Late</Badge>
+      case 'excused':
+        return <Badge className="bg-blue-500">Excused</Badge>
+      default:
+        return <Badge variant="outline">Not Marked</Badge>
     }
-    return colors[status]
   }
 
-  if (loading || loadingData) {
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'present':
+        return <CheckCircle className="h-5 w-5 text-green-600" />
+      case 'absent':
+        return <XCircle className="h-5 w-5 text-red-600" />
+      case 'late':
+        return <Clock className="h-5 w-5 text-yellow-600" />
+      case 'excused':
+        return <CheckCircle className="h-5 w-5 text-blue-600" />
+      default:
+        return null
+    }
+  }
+
+  const getTodayStats = () => {
+    const total = students.length
+    const marked = attendance.size
+    const present = Array.from(attendance.values()).filter(s => s === 'present').length
+    const absent = Array.from(attendance.values()).filter(s => s === 'absent').length
+    const late = Array.from(attendance.values()).filter(s => s === 'late').length
+
+    return { total, marked, present, absent, late }
+  }
+
+  if (authLoading || loading) {
     return (
-      <DashboardLayout title="Attendance">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-lg">Loading...</div>
+      <DashboardLayout title="Attendance Register">
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       </DashboardLayout>
     )
   }
 
-  if (!user || profile?.role !== 'teacher') {
-    return (
-      <DashboardLayout title="Attendance">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center py-8">
-              <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Access Denied</h3>
-              <p className="text-gray-600">This page is only accessible to teachers.</p>
-            </div>
-          </CardContent>
-        </Card>
-      </DashboardLayout>
-    )
-  }
+  if (!user || !profile) return null
 
+  const stats = getTodayStats()
   const selectedClassInfo = classes.find(c => c.id === selectedClass)
 
   return (
-    <DashboardLayout title="Attendance Management">
+    <DashboardLayout title="Attendance Register">
       <div className="space-y-6">
-        {/* Header Section */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Attendance Register</h1>
-            <p className="text-gray-600 mt-1">Mark and manage student attendance</p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={generateReport} disabled={attendance.length === 0}>
-              <Download className="mr-2 h-4 w-4" />
-              Export CSV
-            </Button>
-            <Button onClick={saveAttendance} disabled={isSaving || attendance.length === 0}>
-              <Save className="mr-2 h-4 w-4" />
-              {isSaving ? 'Saving...' : 'Save Attendance'}
-            </Button>
-          </div>
-        </div>
-
-        {/* Filters Card */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Class Selector */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Select Class</label>
-                <Select value={selectedClass} onValueChange={setSelectedClass}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a class" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {classes.map((cls) => (
-                      <SelectItem key={cls.id} value={cls.id}>
-                        {cls.grade_level} - {cls.class_name} ({cls.section})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Date Picker */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Select Date</label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start text-left font-normal">
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {format(selectedDate, 'PPP')}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={(date) => date && setSelectedDate(date)}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              {/* Search */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Search Students</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search by name or ID..."
-                    className="pl-10 w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Stats */}
-            {selectedClassInfo && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-                <Card className="border-l-4 border-l-green-500">
-                  <CardContent className="p-4">
-                    <div className="text-2xl font-bold text-green-600">{getStatusCount('present')}</div>
-                    <div className="text-sm text-gray-600">Present</div>
-                  </CardContent>
-                </Card>
-                <Card className="border-l-4 border-l-red-500">
-                  <CardContent className="p-4">
-                    <div className="text-2xl font-bold text-red-600">{getStatusCount('absent')}</div>
-                    <div className="text-sm text-gray-600">Absent</div>
-                  </CardContent>
-                </Card>
-                <Card className="border-l-4 border-l-yellow-500">
-                  <CardContent className="p-4">
-                    <div className="text-2xl font-bold text-yellow-600">{getStatusCount('late')}</div>
-                    <div className="text-sm text-gray-600">Late</div>
-                  </CardContent>
-                </Card>
-                <Card className="border-l-4 border-l-blue-500">
-                  <CardContent className="p-4">
-                    <div className="text-2xl font-bold text-blue-600">{getStatusCount('excused')}</div>
-                    <div className="text-sm text-gray-600">Excused</div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Attendance Table */}
-        {selectedClass ? (
+        {/* Summary Cards */}
+        <div className="grid gap-4 md:grid-cols-4">
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Attendance Register</CardTitle>
-                  <CardDescription>
-                    {selectedClassInfo && `${selectedClassInfo.grade_level} - ${selectedClassInfo.class_name} (${selectedClassInfo.section})`}
-                    {' • '}
-                    {format(selectedDate, 'EEEE, MMMM d, yyyy')}
-                  </CardDescription>
-                </div>
-                <Badge variant="outline" className="text-sm">
-                  {filteredStudents.length} Students
-                </Badge>
-              </div>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Total Students
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">#</TableHead>
-                      <TableHead>Student ID</TableHead>
-                      <TableHead>Student Name</TableHead>
-                      <TableHead className="text-center">Status</TableHead>
-                      <TableHead className="text-center">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredStudents.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-gray-500">
-                          No students found in this class.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredStudents.map((student, index) => {
-                        const record = attendance.find(a => a.student_id === student.id)
-                        const status = record?.status || 'present'
-
-                        return (
-                          <TableRow key={student.id}>
-                            <TableCell className="font-medium">{index + 1}</TableCell>
-                            <TableCell className="font-mono">{student.student_id}</TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <User className="h-4 w-4 text-gray-400" />
-                                <span>{student.full_name}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Badge className={`px-3 py-1 ${getStatusColor(status)}`}>
-                                {status.toUpperCase()}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex justify-center gap-2">
-                                <Button
-                                  size="sm"
-                                  variant={status === 'present' ? 'default' : 'outline'}
-                                  className="h-8 px-3"
-                                  onClick={() => handleAttendanceChange(student.id, 'present')}
-                                >
-                                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                                  Present
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant={status === 'absent' ? 'destructive' : 'outline'}
-                                  className="h-8 px-3"
-                                  onClick={() => handleAttendanceChange(student.id, 'absent')}
-                                >
-                                  <XCircle className="h-3 w-3 mr-1" />
-                                  Absent
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant={status === 'late' ? 'outline' : 'outline'}
-                                  className="h-8 px-3 border-yellow-500 text-yellow-600 hover:bg-yellow-50"
-                                  onClick={() => handleAttendanceChange(student.id, 'late')}
-                                >
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  Late
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+              <div className="text-2xl font-bold">{stats.total}</div>
             </CardContent>
           </Card>
-        ) : (
           <Card>
-            <CardContent className="py-12">
-              <div className="text-center">
-                <CalendarIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Class Selected</h3>
-                <p className="text-gray-600 mb-4">Please select a class to view attendance records.</p>
-                {classes.length === 0 && (
-                  <p className="text-sm text-gray-500">
-                    You are not assigned to any classes. Contact your administrator.
-                  </p>
-                )}
-              </div>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                Present
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{stats.present}</div>
             </CardContent>
           </Card>
-        )}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <XCircle className="h-4 w-4 text-red-600" />
+                Absent
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">{stats.absent}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Clock className="h-4 w-4 text-yellow-600" />
+                Late
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{stats.late}</div>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Quick Actions Card */}
+        {/* Main Content */}
         <Card>
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Common attendance tasks</CardDescription>
+            <CardTitle>Attendance Register</CardTitle>
+            <CardDescription>
+              Mark daily attendance for your classes
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Button 
-                variant="outline" 
-                className="h-auto py-4 flex flex-col gap-2"
-                onClick={() => {
-                  // Mark all as present
-                  setAttendance(prev => 
-                    prev.map(record => ({ ...record, status: 'present' }))
-                  )
-                  toast.info('All students marked as present')
-                }}
-                disabled={attendance.length === 0}
-              >
-                <CheckCircle2 className="h-8 w-8 text-green-600" />
-                <span>Mark All Present</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                className="h-auto py-4 flex flex-col gap-2"
-                onClick={() => setSelectedDate(new Date())}
-              >
-                <CalendarIcon className="h-8 w-8 text-blue-600" />
-                <span>Today's Date</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                className="h-auto py-4 flex flex-col gap-2"
-                onClick={() => {
-                  const yesterday = new Date(selectedDate)
-                  yesterday.setDate(yesterday.getDate() - 1)
-                  setSelectedDate(yesterday)
-                }}
-              >
-                <CalendarIcon className="h-8 w-8 text-gray-600" />
-                <span>Previous Day</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                className="h-auto py-4 flex flex-col gap-2"
-                onClick={() => {
-                  const tomorrow = new Date(selectedDate)
-                  tomorrow.setDate(tomorrow.getDate() + 1)
-                  setSelectedDate(tomorrow)
-                }}
-              >
-                <CalendarIcon className="h-8 w-8 text-gray-600" />
-                <span>Next Day</span>
-              </Button>
-            </div>
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="mark">Mark Attendance</TabsTrigger>
+                <TabsTrigger value="history">View History</TabsTrigger>
+              </TabsList>
+
+              {/* Mark Attendance Tab */}
+              <TabsContent value="mark" className="space-y-4">
+                {/* Class and Date Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Select Class</Label>
+                    <Select value={selectedClass} onValueChange={setSelectedClass}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose class" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {classes.map((cls) => (
+                          <SelectItem key={cls.id} value={cls.id}>
+                            {cls.grade_level} {cls.section} ({cls.student_count} students)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Date</Label>
+                    <Input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>&nbsp;</Label>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={markAllPresent}
+                    >
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Mark All Present
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                {stats.total > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Progress: {stats.marked} / {stats.total} marked</span>
+                      <span>{Math.round((stats.marked / stats.total) * 100)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all"
+                        style={{ width: `${(stats.marked / stats.total) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Students List */}
+                {students.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    No students found in this class
+                  </div>
+                ) : (
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Roll</TableHead>
+                          <TableHead>Student Name</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Quick Mark</TableHead>
+                          <TableHead>Remarks</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {students.map((student) => (
+                          <TableRow key={student.id}>
+                            <TableCell className="font-medium">
+                              {student.roll_number}
+                            </TableCell>
+                            <TableCell>{student.full_name}</TableCell>
+                            <TableCell>
+                              {getStatusBadge(attendance.get(student.id) || '')}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant={attendance.get(student.id) === 'present' ? 'default' : 'outline'}
+                                  onClick={() => markAttendance(student.id, 'present')}
+                                  className={attendance.get(student.id) === 'present' ? 'bg-green-600 hover:bg-green-700' : ''}
+                                >
+                                  <CheckCircle className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={attendance.get(student.id) === 'absent' ? 'default' : 'outline'}
+                                  onClick={() => markAttendance(student.id, 'absent')}
+                                  className={attendance.get(student.id) === 'absent' ? 'bg-red-600 hover:bg-red-700' : ''}
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={attendance.get(student.id) === 'late' ? 'default' : 'outline'}
+                                  onClick={() => markAttendance(student.id, 'late')}
+                                  className={attendance.get(student.id) === 'late' ? 'bg-yellow-600 hover:bg-yellow-700' : ''}
+                                >
+                                  <Clock className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                placeholder="Add remarks..."
+                                value={remarks.get(student.id) || ''}
+                                onChange={(e) => setRemark(student.id, e.target.value)}
+                                className="w-full"
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+
+                    <div className="flex justify-end gap-2 pt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setAttendance(new Map())
+                          setRemarks(new Map())
+                        }}
+                      >
+                        Clear All
+                      </Button>
+                      <Button
+                        onClick={saveAttendance}
+                        disabled={saving || attendance.size === 0}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Attendance
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </TabsContent>
+
+              {/* History Tab */}
+              <TabsContent value="history" className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Select Class</Label>
+                    <Select value={selectedClass} onValueChange={setSelectedClass}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose class" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {classes.map((cls) => (
+                          <SelectItem key={cls.id} value={cls.id}>
+                            {cls.grade_level} {cls.section}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>View Date</Label>
+                    <Input
+                      type="date"
+                      value={viewDate}
+                      onChange={(e) => setViewDate(e.target.value)}
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>&nbsp;</Label>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={exportAttendancePDF}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export CSV
+                    </Button>
+                  </div>
+                </div>
+
+                {attendanceHistory.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    No attendance records found for this date
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Roll</TableHead>
+                        <TableHead>Student Name</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Remarks</TableHead>
+                        <TableHead>Marked At</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {attendanceHistory.map((record) => (
+                        <TableRow key={record.id}>
+                          <TableCell className="font-medium">
+                            {record.roll_number}
+                          </TableCell>
+                          <TableCell>{record.student_name}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {getStatusIcon(record.status)}
+                              {getStatusBadge(record.status)}
+                            </div>
+                          </TableCell>
+                          <TableCell>{record.remarks || '-'}</TableCell>
+                          <TableCell className="text-sm text-gray-600">
+                            {new Date(record.marked_at).toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>
