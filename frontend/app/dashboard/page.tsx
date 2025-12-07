@@ -1,22 +1,160 @@
 ﻿'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
-import { Users, GraduationCap, FileText, School, TrendingUp, Calendar } from 'lucide-react'
+import { Users, GraduationCap, FileText, School, Calendar, BookOpen, ClipboardList } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+
+interface SchoolInfo {
+  name: string
+  school_code: string
+  school_type: string
+  address: string | null
+  phone: string | null
+}
 
 export default function DashboardPage() {
   const { user, profile, loading } = useAuth()
   const router = useRouter()
+  const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null)
+  const [stats, setStats] = useState({
+    classes: 0,
+    subjects: 0,
+    students: 0,
+    upcomingExams: 0,
+    pendingAssignments: 0,
+    todayClasses: 0
+  })
 
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login')
     }
   }, [user, loading, router])
+
+  useEffect(() => {
+    if (profile) {
+      if (profile.role === 'teacher') {
+        loadTeacherData()
+      }
+      if (profile.school_id) {
+        loadSchoolInfo()
+      }
+    }
+  }, [profile])
+
+  const loadSchoolInfo = async () => {
+    if (!profile?.school_id) return
+
+    try {
+      const { data } = await supabase
+        .from('schools')
+        .select('name, school_code, school_type, address, phone')
+        .eq('id', profile.school_id)
+        .single()
+
+      if (data) {
+        setSchoolInfo(data)
+      }
+    } catch (error) {
+      console.error('Error loading school info:', error)
+    }
+  }
+
+  const loadTeacherData = async () => {
+    if (!profile?.id) return
+
+    try {
+      // Get classes assigned to teacher
+      const { data: classAssignments } = await supabase
+        .from('class_subject_assignments')
+        .select('class_id, classes!inner(school_id)')
+        .eq('teacher_id', profile.id)
+        .eq('classes.school_id', profile.school_id)
+
+      const uniqueClasses = new Set(classAssignments?.map(a => a.class_id) || [])
+      
+      // Get subjects assigned to teacher
+      const { data: subjectAssignments } = await supabase
+        .from('teacher_subject_assignments')
+        .select('subject_id')
+        .eq('teacher_id', profile.id)
+        .eq('school_id', profile.school_id)
+
+      const uniqueSubjects = new Set(subjectAssignments?.map(a => a.subject_id) || [])
+
+      // Get total students in teacher's classes
+      let totalStudents = 0
+      if (uniqueClasses.size > 0) {
+        const { count } = await supabase
+          .from('students')
+          .select('*', { count: 'exact', head: true })
+          .in('class_id', Array.from(uniqueClasses))
+      
+        totalStudents = count || 0
+      }
+
+      // Get upcoming exams (next 7 days)
+      const today = new Date().toISOString().split('T')[0]
+      const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      
+      let upcomingExams = 0
+      if (uniqueClasses.size > 0) {
+        const { count } = await supabase
+          .from('exams')
+          .select('*', { count: 'exact', head: true })
+          .in('class_id', Array.from(uniqueClasses))
+          .gte('exam_date', today)
+          .lte('exam_date', nextWeek)
+          .eq('school_id', profile.school_id)
+        
+        upcomingExams = count || 0
+      }
+
+      // Get pending assignments (due in next 7 days, not fully graded)
+      let pendingAssignments = 0
+      if (uniqueClasses.size > 0) {
+        const { data: assignments } = await supabase
+          .from('assignments')
+          .select('id, class_id')
+          .in('class_id', Array.from(uniqueClasses))
+          .gte('due_date', today)
+          .eq('school_id', profile.school_id)
+
+        // Check which ones have pending submissions
+        for (const assignment of assignments || []) {
+          const { count: studentCount } = await supabase
+            .from('students')
+            .select('*', { count: 'exact', head: true })
+            .eq('class_id', assignment.class_id)
+
+          const { count: submissionCount } = await supabase
+            .from('assignment_submissions')
+            .select('*', { count: 'exact', head: true })
+            .eq('assignment_id', assignment.id)
+
+          if ((submissionCount || 0) < (studentCount || 0)) {
+            pendingAssignments++
+          }
+        }
+      }
+
+      setStats({
+        classes: uniqueClasses.size,
+        subjects: uniqueSubjects.size,
+        students: totalStudents,
+        upcomingExams,
+        pendingAssignments,
+        todayClasses: uniqueClasses.size // Simplified for now
+      })
+    } catch (error) {
+      console.error('Error loading teacher stats:', error)
+    }
+  }
 
   if (loading) {
     return (
@@ -33,255 +171,164 @@ export default function DashboardPage() {
   return (
     <DashboardLayout title="Dashboard">
       <div className="space-y-6">
+        {/* School Info Banner */}
+        {schoolInfo && (
+          <Card className="bg-gradient-to-r from-blue-600 to-blue-800 text-white">
+            <CardContent className="pt-6">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="h-16 w-16 rounded-full bg-white/20 flex items-center justify-center">
+                    <School className="h-8 w-8" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">{schoolInfo.name}</h2>
+                    <p className="text-blue-100 text-sm">
+                      {schoolInfo.school_code} • {schoolInfo.school_type} School
+                    </p>
+                    {schoolInfo.address && (
+                      <p className="text-blue-100 text-sm mt-1">{schoolInfo.address}</p>
+                    )}
+                  </div>
+                </div>
+                {schoolInfo.phone && (
+                  <div className="text-right">
+                    <p className="text-blue-100 text-sm">Contact</p>
+                    <p className="font-semibold">{schoolInfo.phone}</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Welcome Card */}
-        <Card className="bg-linear-to-r from-blue-500 to-blue-700 text-white">
+        <Card className="bg-gradient-to-r from-purple-500 to-purple-700 text-white">
           <CardHeader>
             <CardTitle className="text-2xl">Welcome back, {profile.full_name}!</CardTitle>
-            <CardDescription className="text-blue-100">
-              {profile.role === 'super_admin' && 'System Administrator Dashboard'}
+            <CardDescription className="text-purple-100">
+              {profile.role === 'teacher' && 'Teacher Dashboard - Manage your classes and students'}
               {profile.role === 'school_admin' && 'School Administrator Dashboard'}
-              {profile.role === 'teacher' && 'Teacher Dashboard'}
-              {profile.role === 'student' && 'Student Dashboard'}
-              {profile.role === 'parent' && 'Parent Dashboard'}
+              {profile.role === 'super_admin' && 'System Administrator Dashboard'}
             </CardDescription>
           </CardHeader>
         </Card>
 
-        {/* Role-Specific Content */}
-        {profile.role === 'super_admin' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Schools</CardTitle>
-                <School className="h-5 w-5 text-blue-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-blue-600">3</div>
-                <p className="text-xs text-gray-500 mt-1">Active schools in system</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Classes</CardTitle>
-                <GraduationCap className="h-5 w-5 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-green-600">54</div>
-                <p className="text-xs text-gray-500 mt-1">Across all schools</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Users</CardTitle>
-                <Users className="h-5 w-5 text-purple-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-purple-600">4</div>
-                <p className="text-xs text-gray-500 mt-1">Admins, teachers, students</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">System Health</CardTitle>
-                <TrendingUp className="h-5 w-5 text-emerald-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-emerald-600">100%</div>
-                <p className="text-xs text-gray-500 mt-1">All systems operational</p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {profile.role === 'school_admin' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Classes</CardTitle>
-                <GraduationCap className="h-5 w-5 text-blue-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-blue-600">15</div>
-                <p className="text-xs text-gray-500 mt-1">Active classes</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Teachers</CardTitle>
-                <Users className="h-5 w-5 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-green-600">1</div>
-                <p className="text-xs text-gray-500 mt-1">Teaching staff</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Students</CardTitle>
-                <Users className="h-5 w-5 text-purple-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-purple-600">1</div>
-                <p className="text-xs text-gray-500 mt-1">Enrolled students</p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
+        {/* Teacher Stats */}
         {profile.role === 'teacher' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">My Classes</CardTitle>
-                <GraduationCap className="h-5 w-5 text-blue-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-blue-600">0</div>
-                <p className="text-xs text-gray-500 mt-1">Assigned classes</p>
-              </CardContent>
-            </Card>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/dashboard/classes')}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">My Classes</CardTitle>
+                  <GraduationCap className="h-5 w-5 text-blue-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-blue-600">{stats.classes}</div>
+                  <p className="text-xs text-gray-500 mt-1">Assigned classes</p>
+                </CardContent>
+              </Card>
 
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Pending Exams</CardTitle>
-                <FileText className="h-5 w-5 text-orange-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-orange-600">0</div>
-                <p className="text-xs text-gray-500 mt-1">To be graded</p>
-              </CardContent>
-            </Card>
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/dashboard/classes')}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Total Students</CardTitle>
+                  <Users className="h-5 w-5 text-purple-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-purple-600">{stats.students}</div>
+                  <p className="text-xs text-gray-500 mt-1">In my classes</p>
+                </CardContent>
+              </Card>
 
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Today's Classes</CardTitle>
-                <Calendar className="h-5 w-5 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-green-600">0</div>
-                <p className="text-xs text-gray-500 mt-1">Scheduled for today</p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/dashboard/exams')}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Teaching Subjects</CardTitle>
+                  <BookOpen className="h-5 w-5 text-green-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-green-600">{stats.subjects}</div>
+                  <p className="text-xs text-gray-500 mt-1">Subjects assigned</p>
+                </CardContent>
+              </Card>
 
-        {profile.role === 'student' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">My Class</CardTitle>
-                <GraduationCap className="h-5 w-5 text-blue-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-blue-600">Form 1 A</div>
-                <p className="text-xs text-gray-500 mt-1">Demo High School</p>
-              </CardContent>
-            </Card>
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/dashboard/exams')}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Upcoming Exams</CardTitle>
+                  <Calendar className="h-5 w-5 text-orange-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-orange-600">{stats.upcomingExams}</div>
+                  <p className="text-xs text-gray-500 mt-1">Next 7 days</p>
+                </CardContent>
+              </Card>
 
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Upcoming Exams</CardTitle>
-                <FileText className="h-5 w-5 text-orange-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-orange-600">0</div>
-                <p className="text-xs text-gray-500 mt-1">Scheduled exams</p>
-              </CardContent>
-            </Card>
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/dashboard/assignments')}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Pending Assignments</CardTitle>
+                  <ClipboardList className="h-5 w-5 text-red-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-red-600">{stats.pendingAssignments}</div>
+                  <p className="text-xs text-gray-500 mt-1">Need grading</p>
+                </CardContent>
+              </Card>
 
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Attendance</CardTitle>
-                <TrendingUp className="h-5 w-5 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-green-600">100%</div>
-                <p className="text-xs text-gray-500 mt-1">This term</p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* Quick Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Common tasks for your role</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {profile.role === 'super_admin' && (
-                <>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <School className="h-6 w-6" />
-                    <span>Manage Schools</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <Users className="h-6 w-6" />
-                    <span>Manage Users</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <FileText className="h-6 w-6" />
-                    <span>System Reports</span>
-                  </Button>
-                </>
-              )}
-              {profile.role === 'school_admin' && (
-                <>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <GraduationCap className="h-6 w-6" />
-                    <span>Manage Classes</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <Users className="h-6 w-6" />
-                    <span>Manage Students</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <FileText className="h-6 w-6" />
-                    <span>View Reports</span>
-                  </Button>
-                </>
-              )}
-              {profile.role === 'teacher' && (
-                <>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <GraduationCap className="h-6 w-6" />
-                    <span>My Classes</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <FileText className="h-6 w-6" />
-                    <span>Create Exam</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <Calendar className="h-6 w-6" />
-                    <span>Mark Attendance</span>
-                  </Button>
-                </>
-              )}
-              {profile.role === 'student' && (
-                <>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <FileText className="h-6 w-6" />
-                    <span>My Grades</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <Calendar className="h-6 w-6" />
-                    <span>My Attendance</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2">
-                    <GraduationCap className="h-6 w-6" />
-                    <span>My Assignments</span>
-                  </Button>
-                </>
-              )}
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/dashboard/attendance')}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Today's Classes</CardTitle>
+                  <Calendar className="h-5 w-5 text-teal-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-teal-600">{stats.todayClasses}</div>
+                  <p className="text-xs text-gray-500 mt-1">Mark attendance</p>
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
+
+            {/* Quick Actions */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Quick Actions</CardTitle>
+                <CardDescription>Common tasks for today</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <Button 
+                    variant="outline" 
+                    className="h-24 flex flex-col gap-2 hover:bg-blue-50 hover:border-blue-300"
+                    onClick={() => router.push('/dashboard/attendance')}
+                  >
+                    <ClipboardList className="h-6 w-6 text-blue-600" />
+                    <span className="font-semibold">Mark Attendance</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="h-24 flex flex-col gap-2 hover:bg-green-50 hover:border-green-300"
+                    onClick={() => router.push('/dashboard/classes')}
+                  >
+                    <GraduationCap className="h-6 w-6 text-green-600" />
+                    <span className="font-semibold">View Classes</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="h-24 flex flex-col gap-2 hover:bg-purple-50 hover:border-purple-300"
+                    onClick={() => router.push('/dashboard/exams')}
+                  >
+                    <FileText className="h-6 w-6 text-purple-600" />
+                    <span className="font-semibold">Manage Exams</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="h-24 flex flex-col gap-2 hover:bg-orange-50 hover:border-orange-300"
+                    onClick={() => router.push('/dashboard/lesson-plans')}
+                  >
+                    <BookOpen className="h-6 w-6 text-orange-600" />
+                    <span className="font-semibold">Lesson Plans</span>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
     </DashboardLayout>
   )

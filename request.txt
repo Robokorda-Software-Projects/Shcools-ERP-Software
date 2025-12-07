@@ -1,0 +1,1918 @@
+heyy iam having problems with my teacher dashboard, my teacher that iam logged to have been assignment some classes and a school but its not visible on his dashboard. infact i wanted the teachers, to see only the infomation pertaining to their school, their classes only, not all the classes or schools or other school's infomartion. also on my attandance page i cant seem to see the classes (the teacher has been assigned to) and even the classes
+
+1. All Tables and Their Columns:
+
+| table_name                | column_name          | data_type                   | is_nullable | column_default            |
+| ------------------------- | -------------------- | --------------------------- | ----------- | ------------------------- |
+| assignment_submissions    | id                   | uuid                        | NO          | gen_random_uuid()         |
+| assignment_submissions    | assignment_id        | uuid                        | NO          | null                      |
+| assignment_submissions    | student_id           | uuid                        | NO          | null                      |
+| assignment_submissions    | submission_file_url  | text                        | YES         | null                      |
+| assignment_submissions    | submission_file_name | text                        | YES         | null                      |
+| assignment_submissions    | submitted_at         | timestamp with time zone    | YES         | null                      |
+| assignment_submissions    | marks_obtained       | numeric                     | YES         | null                      |
+| assignment_submissions    | feedback             | text                        | YES         | null                      |
+| assignment_submissions    | graded_by            | uuid                        | YES         | null                      |
+| assignment_submissions    | graded_at            | timestamp with time zone    | YES         | null                      |
+| assignment_submissions    | created_at           | timestamp with time zone    | YES         | now()                     |
+| assignments               | id                   | uuid                        | NO          | gen_random_uuid()         |
+| assignments               | title                | text                        | NO          | null                      |
+| assignments               | description          | text                        | YES         | null                      |
+| assignments               | subject_id           | uuid                        | YES         | null                      |
+| assignments               | class_id             | uuid                        | YES         | null                      |
+| assignments               | file_url             | text                        | NO          | null                      |
+| assignments               | file_name            | text                        | NO          | null                      |
+| assignments               | due_date             | date                        | NO          | null                      |
+| assignments               | total_marks          | integer                     | NO          | 100                       |
+| assignments               | created_by           | uuid                        | YES         | null                      |
+| assignments               | school_id            | uuid                        | YES         | null                      |
+| assignments               | created_at           | timestamp with time zone    | YES         | now()                     |
+| attendance                | id                   | uuid                        | NO          | gen_random_uuid()         |
+| attendance                | student_id           | uuid                        | NO          | null                      |
+| attendance                | class_id             | uuid                        | NO          | null                      |
+| attendance                | date                 | date                        | NO          | null                      |
+| attendance                | status               | text                        | NO          | null                      |
+| attendance                | remarks              | text                        | YES         | null                      |
+| attendance                | marked_by            | uuid                        | NO          | null                      |
+| attendance                | school_id            | uuid                        | YES         | null                      |
+| attendance                | marked_at            | timestamp with time zone    | YES         | now()                     |
+| attendance                | created_at           | timestamp with time zone    | YES         | now()                     |
+| class_subject_assignments | id                   | uuid                        | NO          | gen_random_uuid()         |
+| class_subject_assignments | class_id             | uuid                        | NO          | null                      |
+| class_subject_assignments | subject_id           | uuid                        | NO          | null                      |
+| class_subject_assignments | teacher_id           | uuid                        | YES         | null                      |
+| class_subject_assignments | created_at           | timestamp without time zone | YES         | now()                     |
+| class_subject_assignments | created_by           | uuid                        | YES         | null                      |
+| classes                   | id                   | uuid                        | NO          | gen_random_uuid()         |
+| classes                   | school_id            | uuid                        | NO          | null                      |
+| classes                   | grade_level          | character varying           | NO          | null                      |
+| classes                   | section              | character varying           | NO          | null                      |
+| classes                   | academic_year        | character varying           | NO          | '2025'::character varying |
+| classes                   | class_teacher_id     | uuid                        | YES         | null                      |
+| classes                   | created_at           | timestamp without time zone | YES         | now()                     |
+| classes                   | updated_at           | timestamp without time zone | YES         | now()                     |
+| exam_results              | id                   | uuid                        | NO          | gen_random_uuid()         |
+| exam_results              | exam_id              | uuid                        | NO          | null                      |
+| exam_results              | student_id           | uuid                        | NO          | null                      |
+| exam_results              | marks_obtained       | numeric                     | YES         | null                      |
+| exam_results              | percentage           | numeric                     | YES         | null                      |
+| exam_results              | grade                | character varying           | YES         | null                      |
+| exam_results              | remarks              | text                        | YES         | null                      |
+| exam_results              | graded_by            | uuid                        | YES         | null                      |
+| exam_results              | graded_at            | timestamp without time zone | YES         | null                      |
+| exam_results              | created_at           | timestamp without time zone | YES         | now()                     |
+| exam_results              | updated_at           | timestamp without time zone | YES         | now()                     |
+| exams                     | id                   | uuid                        | NO          | gen_random_uuid()         |
+| exams                     | school_id            | uuid                        | NO          | null                      |
+| exams                     | class_id             | uuid                        | NO          | null                      |
+| exams                     | subject_id           | uuid                        | NO          | null                      |
+| exams                     | title                | character varying           | NO          | null                      |
+| exams                     | description          | text                        | YES         | null                      |
+| exams                     | exam_date            | date                        | NO          | null                      |
+| exams                     | total_marks          | integer                     | NO          | null                      |
+| exams                     | created_by           | uuid                        | NO          | null                      |
+| exams                     | created_at           | timestamp without time zone | YES         | now()                     |
+| exams                     | updated_at           | timestamp without time zone | YES         | now()                     |
+| lesson_plans              | id                   | uuid                        | NO          | gen_random_uuid()         |
+| lesson_plans              | title                | text                        | NO          | null                      |
+| lesson_plans              | description          | text                        | YES         | null                      |
+| lesson_plans              | document_type        | text                        | NO          | null                      |
+| lesson_plans              | subject_id           | uuid                        | YES         | null                      |
+| lesson_plans              | class_id             | uuid                        | YES         | null                      |
+| lesson_plans              | file_url             | text                        | NO          | null                      |
+| lesson_plans              | file_name            | text                        | NO          | null                      |
+| lesson_plans              | period_start         | date                        | YES         | null                      |
+| lesson_plans              | period_end           | date                        | YES         | null                      |
+| lesson_plans              | uploaded_by          | uuid                        | YES         | null                      |
+| lesson_plans              | school_id            | uuid                        | YES         | null                      |
+| lesson_plans              | uploaded_at          | timestamp with time zone    | YES         | now()                     |
+| lesson_plans              | created_at           | timestamp with time zone    | YES         | now()                     |
+| profiles                  | id                   | uuid                        | NO          | null                      |
+| profiles                  | email                | character varying           | NO          | null                      |
+| profiles                  | username             | character varying           | NO          | null                      |
+| profiles                  | full_name            | character varying           | NO          | null                      |
+| profiles                  | role                 | character varying           | NO          | null                      |
+| profiles                  | school_id            | uuid                        | YES         | null                      |
+| profiles                  | created_at           | timestamp without time zone | YES         | now()                     |
+| profiles                  | updated_at           | timestamp without time zone | YES         | now()                     |
+| schools                   | id                   | uuid                        | NO          | gen_random_uuid()         |
+| schools                   | name                 | character varying           | NO          | null                      |
+| schools                   | school_code          | character varying           | NO          | null                      |
+| schools                   | school_type          | character varying           | NO          | null                      |
+| schools                   | address              | text                        | YES         | null                      |
+| schools                   | phone                | character varying           | YES         | null                      |
+| schools                   | contact_email        | character varying           | YES         | null                      |
+| schools                   | principal_name       | character varying           | YES         | null                      |
+| schools                   | created_at           | timestamp without time zone | YES         | now()                     |
+
+2. Foreign Key Relationships:
+
+| table_name                  | column_name      | foreign_table_name | foreign_column_name | delete_rule |
+| --------------------------- | ---------------- | ------------------ | ------------------- | ----------- |
+| assignment_submissions      | assignment_id    | assignments        | id                  | CASCADE     |
+| assignment_submissions      | graded_by        | profiles           | id                  | SET NULL    |
+| assignment_submissions      | student_id       | students           | id                  | CASCADE     |
+| assignments                 | class_id         | classes            | id                  | CASCADE     |
+| assignments                 | created_by       | profiles           | id                  | CASCADE     |
+| assignments                 | school_id        | schools            | id                  | CASCADE     |
+| assignments                 | subject_id       | subjects           | id                  | CASCADE     |
+| attendance                  | class_id         | classes            | id                  | CASCADE     |
+| attendance                  | marked_by        | profiles           | id                  | CASCADE     |
+| attendance                  | school_id        | schools            | id                  | CASCADE     |
+| attendance                  | student_id       | students           | id                  | CASCADE     |
+| class_subject_assignments   | class_id         | classes            | id                  | CASCADE     |
+| class_subject_assignments   | created_by       | profiles           | id                  | NO ACTION   |
+| class_subject_assignments   | subject_id       | subjects           | id                  | CASCADE     |
+| class_subject_assignments   | teacher_id       | profiles           | id                  | SET NULL    |
+| classes                     | class_teacher_id | profiles           | id                  | SET NULL    |
+| classes                     | school_id        | schools            | id                  | CASCADE     |
+| exam_results                | exam_id          | exams              | id                  | CASCADE     |
+| exam_results                | graded_by        | profiles           | id                  | NO ACTION   |
+| exam_results                | student_id       | students           | id                  | CASCADE     |
+| exams                       | class_id         | classes            | id                  | CASCADE     |
+| exams                       | created_by       | profiles           | id                  | NO ACTION   |
+| exams                       | school_id        | schools            | id                  | CASCADE     |
+| exams                       | subject_id       | subjects           | id                  | CASCADE     |
+| lesson_plans                | class_id         | classes            | id                  | CASCADE     |
+| lesson_plans                | school_id        | schools            | id                  | CASCADE     |
+| lesson_plans                | subject_id       | subjects           | id                  | CASCADE     |
+| lesson_plans                | uploaded_by      | profiles           | id                  | CASCADE     |
+| profiles                    | school_id        | schools            | id                  | SET NULL    |
+| students                    | class_id         | classes            | id                  | SET NULL    |
+| students                    | parent_id        | profiles           | id                  | SET NULL    |
+| students                    | user_id          | profiles           | id                  | CASCADE     |
+| subjects                    | school_id        | schools            | id                  | CASCADE     |
+| teacher_subject_assignments | created_by       | profiles           | id                  | NO ACTION   |
+| teacher_subject_assignments | school_id        | schools            | id                  | CASCADE     |
+| teacher_subject_assignments | subject_id       | subjects           | id                  | CASCADE     |
+| teacher_subject_assignments | teacher_id       | profiles           | id                  | CASCADE     |
+
+3. Primary Keys:
+
+| table_name                  | column_name |
+| --------------------------- | ----------- |
+| assignment_submissions      | id          |
+| assignments                 | id          |
+| attendance                  | id          |
+| class_subject_assignments   | id          |
+| classes                     | id          |
+| exam_results                | id          |
+| exams                       | id          |
+| lesson_plans                | id          |
+| profiles                    | id          |
+| schools                     | id          |
+| students                    | id          |
+| subjects                    | id          |
+| teacher_subject_assignments | id          |
+
+4. Unique Constraints:
+
+| table_name                  | column_name      |
+| --------------------------- | ---------------- |
+| assignment_submissions      | assignment_id    |
+| assignment_submissions      | student_id       |
+| attendance                  | student_id       |
+| attendance                  | date             |
+| class_subject_assignments   | class_id         |
+| class_subject_assignments   | subject_id       |
+| classes                     | grade_level      |
+| classes                     | section          |
+| classes                     | academic_year    |
+| classes                     | school_id        |
+| exam_results                | student_id       |
+| exam_results                | exam_id          |
+| profiles                    | email            |
+| profiles                    | username         |
+| schools                     | school_code      |
+| students                    | user_id          |
+| subjects                    | code             |
+| subjects                    | school_id        |
+| teacher_subject_assignments | section          |
+| teacher_subject_assignments | subject_id       |
+| teacher_subject_assignments | teacher_id       |
+| teacher_subject_assignments | school_id        |
+| teacher_subject_assignments | grade_level      |
+| teacher_subject_assignments | assignment_level |
+
+5. Check Constraints:
+
+| table_name                  | constraint_name                                    | check_clause                                                                                                                                                                                         |
+| --------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| assignment_submissions      | 23648_26158_2_not_null                             | assignment_id IS NOT NULL                                                                                                                                                                            |
+| assignment_submissions      | 23648_26158_3_not_null                             | student_id IS NOT NULL                                                                                                                                                                               |
+| assignment_submissions      | 23648_26158_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| assignments                 | 23648_26128_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| assignments                 | 23648_26128_2_not_null                             | title IS NOT NULL                                                                                                                                                                                    |
+| assignments                 | 23648_26128_9_not_null                             | total_marks IS NOT NULL                                                                                                                                                                              |
+| assignments                 | 23648_26128_8_not_null                             | due_date IS NOT NULL                                                                                                                                                                                 |
+| assignments                 | 23648_26128_7_not_null                             | file_name IS NOT NULL                                                                                                                                                                                |
+| assignments                 | 23648_26128_6_not_null                             | file_url IS NOT NULL                                                                                                                                                                                 |
+| attendance                  | 23648_25825_7_not_null                             | marked_by IS NOT NULL                                                                                                                                                                                |
+| attendance                  | 23648_25825_4_not_null                             | date IS NOT NULL                                                                                                                                                                                     |
+| attendance                  | 23648_25825_5_not_null                             | status IS NOT NULL                                                                                                                                                                                   |
+| attendance                  | attendance_status_check                            | (status = ANY (ARRAY['present'::text, 'absent'::text, 'late'::text, 'excused'::text]))                                                                                                               |
+| attendance                  | 23648_25825_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| attendance                  | 23648_25825_2_not_null                             | student_id IS NOT NULL                                                                                                                                                                               |
+| attendance                  | 23648_25825_3_not_null                             | class_id IS NOT NULL                                                                                                                                                                                 |
+| class_subject_assignments   | 23648_23772_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| class_subject_assignments   | 23648_23772_3_not_null                             | subject_id IS NOT NULL                                                                                                                                                                               |
+| class_subject_assignments   | 23648_23772_2_not_null                             | class_id IS NOT NULL                                                                                                                                                                                 |
+| classes                     | 23648_23721_4_not_null                             | section IS NOT NULL                                                                                                                                                                                  |
+| classes                     | 23648_23721_3_not_null                             | grade_level IS NOT NULL                                                                                                                                                                              |
+| classes                     | 23648_23721_2_not_null                             | school_id IS NOT NULL                                                                                                                                                                                |
+| classes                     | 23648_23721_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| classes                     | 23648_23721_5_not_null                             | academic_year IS NOT NULL                                                                                                                                                                            |
+| exam_results                | 23648_23858_3_not_null                             | student_id IS NOT NULL                                                                                                                                                                               |
+| exam_results                | exam_results_percentage_check                      | ((percentage >= (0)::numeric) AND (percentage <= (100)::numeric))                                                                                                                                    |
+| exam_results                | exam_results_marks_obtained_check                  | (marks_obtained >= (0)::numeric)                                                                                                                                                                     |
+| exam_results                | exam_results_grade_check                           | ((grade)::text = ANY ((ARRAY['A'::character varying, 'B'::character varying, 'C'::character varying, 'D'::character varying, 'E'::character varying, 'F'::character varying])::text[]))              |
+| exam_results                | 23648_23858_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| exam_results                | 23648_23858_2_not_null                             | exam_id IS NOT NULL                                                                                                                                                                                  |
+| exams                       | 23648_23827_3_not_null                             | class_id IS NOT NULL                                                                                                                                                                                 |
+| exams                       | 23648_23827_4_not_null                             | subject_id IS NOT NULL                                                                                                                                                                               |
+| exams                       | 23648_23827_5_not_null                             | title IS NOT NULL                                                                                                                                                                                    |
+| exams                       | 23648_23827_7_not_null                             | exam_date IS NOT NULL                                                                                                                                                                                |
+| exams                       | 23648_23827_8_not_null                             | total_marks IS NOT NULL                                                                                                                                                                              |
+| exams                       | 23648_23827_9_not_null                             | created_by IS NOT NULL                                                                                                                                                                               |
+| exams                       | exams_total_marks_check                            | (total_marks > 0)                                                                                                                                                                                    |
+| exams                       | 23648_23827_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| exams                       | 23648_23827_2_not_null                             | school_id IS NOT NULL                                                                                                                                                                                |
+| lesson_plans                | 23648_25380_7_not_null                             | file_url IS NOT NULL                                                                                                                                                                                 |
+| lesson_plans                | 23648_25380_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| lesson_plans                | 23648_25380_2_not_null                             | title IS NOT NULL                                                                                                                                                                                    |
+| lesson_plans                | 23648_25380_4_not_null                             | document_type IS NOT NULL                                                                                                                                                                            |
+| lesson_plans                | 23648_25380_8_not_null                             | file_name IS NOT NULL                                                                                                                                                                                |
+| lesson_plans                | lesson_plans_document_type_check                   | (document_type = ANY (ARRAY['lesson_plan'::text, 'syllabus'::text, 'scheme_of_work'::text]))                                                                                                         |
+| profiles                    | 23648_23683_5_not_null                             | role IS NOT NULL                                                                                                                                                                                     |
+| profiles                    | profiles_role_check                                | ((role)::text = ANY ((ARRAY['super_admin'::character varying, 'school_admin'::character varying, 'teacher'::character varying, 'student'::character varying, 'parent'::character varying])::text[])) |
+| profiles                    | 23648_23683_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| profiles                    | 23648_23683_2_not_null                             | email IS NOT NULL                                                                                                                                                                                    |
+| profiles                    | 23648_23683_3_not_null                             | username IS NOT NULL                                                                                                                                                                                 |
+| profiles                    | 23648_23683_4_not_null                             | full_name IS NOT NULL                                                                                                                                                                                |
+| schools                     | 23648_23670_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| schools                     | 23648_23670_4_not_null                             | school_type IS NOT NULL                                                                                                                                                                              |
+| schools                     | 23648_23670_3_not_null                             | school_code IS NOT NULL                                                                                                                                                                              |
+| schools                     | 23648_23670_2_not_null                             | name IS NOT NULL                                                                                                                                                                                     |
+| schools                     | schools_school_type_check                          | ((school_type)::text = ANY ((ARRAY['Primary'::character varying, 'Secondary'::character varying])::text[]))                                                                                          |
+| students                    | 23648_23801_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| students                    | 23648_23801_2_not_null                             | user_id IS NOT NULL                                                                                                                                                                                  |
+| subjects                    | 23648_23707_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| subjects                    | 23648_23707_4_not_null                             | code IS NOT NULL                                                                                                                                                                                     |
+| subjects                    | 23648_23707_3_not_null                             | name IS NOT NULL                                                                                                                                                                                     |
+| subjects                    | 23648_23707_2_not_null                             | school_id IS NOT NULL                                                                                                                                                                                |
+| teacher_subject_assignments | 23648_23742_3_not_null                             | subject_id IS NOT NULL                                                                                                                                                                               |
+| teacher_subject_assignments | 23648_23742_2_not_null                             | teacher_id IS NOT NULL                                                                                                                                                                               |
+| teacher_subject_assignments | 23648_23742_1_not_null                             | id IS NOT NULL                                                                                                                                                                                       |
+| teacher_subject_assignments | 23648_23742_4_not_null                             | school_id IS NOT NULL                                                                                                                                                                                |
+| teacher_subject_assignments | 23648_23742_5_not_null                             | assignment_level IS NOT NULL                                                                                                                                                                         |
+| teacher_subject_assignments | teacher_subject_assignments_assignment_level_check | ((assignment_level)::text = ANY ((ARRAY['school'::character varying, 'grade'::character varying, 'section'::character varying])::text[]))                                                            |
+
+class_subject_assignments records:
+
+| id                                   | email                                | username            | full_name             | role    | school_id                            | created_at                 | updated_at                 | school_name                | assigned_classes_count | assigned_subjects_count |
+| ------------------------------------ | ------------------------------------ | ------------------- | --------------------- | ------- | ------------------------------------ | -------------------------- | -------------------------- | -------------------------- | ---------------------- | ----------------------- |
+| 0be8152b-820a-46d3-87be-5326b411cd46 | mr.anesu.gono@hararehigh.test        | HARE001-TC-30000008 | Mr. Anesu Gono        | teacher | b3333333-3333-3333-3333-333333333333 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Harare High School         | 0                      | 0                       |
+| 61e5748b-6c91-49ef-ac96-c8f46e931fde | mr.blessing.msipa@hararehigh.test    | HARE001-TC-30000010 | Mr. Blessing Msipa    | teacher | b3333333-3333-3333-3333-333333333333 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Harare High School         | 0                      | 0                       |
+| 33e688cc-add8-400b-813c-35152941ed45 | mr.kudakwashe.makoni@hararehigh.test | HARE001-TC-30000006 | Mr. Kudakwashe Makoni | teacher | b3333333-3333-3333-3333-333333333333 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Harare High School         | 18                     | 1                       |
+| 860d8dd1-9013-4dc3-af91-3db441e4a20f | mr.kudzai.banda@churchill.test       | CHUR001-TC-20000004 | Mr. Kudzai Banda      | teacher | b2222222-2222-2222-2222-222222222222 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Churchill Secondary School | 0                      | 0                       |
+| 8644ee83-ef1c-4f7e-a20f-995936cb0a93 | mr.munashe.shoko@hararehigh.test     | HARE001-TC-30000003 | Mr. Munashe Shoko     | teacher | b3333333-3333-3333-3333-333333333333 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Harare High School         | 12                     | 1                       |
+| 74a66933-acd0-4879-bbb5-d2afd2c37c4e | mr.simbarashe.mpofu@churchill.test   | CHUR001-TC-20000002 | Mr. Simbarashe Mpofu  | teacher | b2222222-2222-2222-2222-222222222222 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Churchill Secondary School | 0                      | 0                       |
+| e0c25f21-f2b7-4456-81ed-309aaf5a9bf7 | mr.tafadzwa.tembo@churchill.test     | CHUR001-TC-20000006 | Mr. Tafadzwa Tembo    | teacher | b2222222-2222-2222-2222-222222222222 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Churchill Secondary School | 0                      | 0                       |
+| e10cd937-8df9-4567-9d0b-ae6a1d04b105 | mr.takudzwa.ndlovu@stmarys.test      | STMP001-TC-10000005 | Mr. Takudzwa Ndlovu   | teacher | b1111111-1111-1111-1111-111111111111 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | St. Mary's Primary School  | 0                      | 0                       |
+| 34600368-d88e-4c11-bcc6-01deedb1aab4 | mr.tanaka.ncube@stmarys.test         | STMP001-TC-10000002 | Mr. Tanaka Ncube      | teacher | b1111111-1111-1111-1111-111111111111 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | St. Mary's Primary School  | 10                     | 1                       |
+| 1cccfcf6-404d-46b8-8cd9-64ab242cb100 | mr.tinotenda.marova@hararehigh.test  | HARE001-TC-30000004 | Mr. Tinotenda Marova  | teacher | b3333333-3333-3333-3333-333333333333 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Harare High School         | 0                      | 0                       |
+| b4c5108b-528e-4c9a-afc4-43c03e0b449e | mrs.chiedza.zulu@churchill.test      | CHUR001-TC-20000007 | Mrs. Chiedza Zulu     | teacher | b2222222-2222-2222-2222-222222222222 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Churchill Secondary School | 0                      | 0                       |
+| 52b795cd-436e-4954-9d98-60fc3d8df463 | mrs.chipo.moyo@stmarys.test          | STMP001-TC-10000001 | Mrs. Chipo Moyo       | teacher | b1111111-1111-1111-1111-111111111111 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | St. Mary's Primary School  | 9                      | 1                       |
+| 98338aef-dd7e-47e0-8c6c-b2a8046cf43c | mrs.faith.zvinavashe@hararehigh.test | HARE001-TC-30000011 | Mrs. Faith Zvinavashe | teacher | b3333333-3333-3333-3333-333333333333 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Harare High School         | 0                      | 0                       |
+| 480b5f6e-b8f1-4f5e-9e13-56bd527fd0ec | mrs.nyasha.khumalo@churchill.test    | CHUR001-TC-20000001 | Mrs. Nyasha Khumalo   | teacher | b2222222-2222-2222-2222-222222222222 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Churchill Secondary School | 6                      | 1                       |
+| f112510f-47be-4439-a2dc-35b361743001 | mrs.panashe.gumede@hararehigh.test   | HARE001-TC-30000002 | Mrs. Panashe Gumede   | teacher | b3333333-3333-3333-3333-333333333333 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Harare High School         | 18                     | 1                       |
+| 42c416c8-2f1b-430a-8a87-c48031085de7 | mrs.rumbidzai.phiri@churchill.test   | CHUR001-TC-20000005 | Mrs. Rumbidzai Phiri  | teacher | b2222222-2222-2222-2222-222222222222 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Churchill Secondary School | 0                      | 0                       |
+| 1cef95d7-ba34-4c11-9640-f287a5f43311 | mrs.rutendo.chikwava@hararehigh.test | HARE001-TC-30000005 | Mrs. Rutendo Chikwava | teacher | b3333333-3333-3333-3333-333333333333 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Harare High School         | 18                     | 1                       |
+| 6ff3c41e-10fc-406f-8361-9236ebcc988e | mrs.ruvimbo.dube@stmarys.test        | STMP001-TC-10000003 | Mrs. Ruvimbo Dube     | teacher | b1111111-1111-1111-1111-111111111111 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | St. Mary's Primary School  | 8                      | 1                       |
+| 617014b0-6f90-4cd8-998b-412e676106af | mrs.tariro.chirwa@hararehigh.test    | HARE001-TC-30000009 | Mrs. Tariro Chirwa    | teacher | b3333333-3333-3333-3333-333333333333 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Harare High School         | 0                      | 0                       |
+| fd921870-0b30-480b-90aa-22b7e86d6f01 | mrs.tatenda.nkomo@churchill.test     | CHUR001-TC-20000003 | Mrs. Tatenda Nkomo    | teacher | b2222222-2222-2222-2222-222222222222 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Churchill Secondary School | 0                      | 0                       |
+| 1dce4151-63d6-45c8-8fec-83e3fe9b1b75 | mrs.tendai.sibanda@stmarys.test      | STMP001-TC-10000004 | Mrs. Tendai Sibanda   | teacher | b1111111-1111-1111-1111-111111111111 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | St. Mary's Primary School  | 0                      | 0                       |
+| 7dd018bc-56a2-4c1c-bc83-454c01a58726 | mrs.tsitsi.mutasa@hararehigh.test    | HARE001-TC-30000007 | Mrs. Tsitsi Mutasa    | teacher | b3333333-3333-3333-3333-333333333333 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Harare High School         | 0                      | 0                       |
+| 401e3b4a-5804-4c3b-b1e2-ec592c5d4410 | mrs.vimbai.nyoni@churchill.test      | CHUR001-TC-20000008 | Mrs. Vimbai Nyoni     | teacher | b2222222-2222-2222-2222-222222222222 | 2025-12-05 13:58:46.680774 | 2025-12-05 13:58:46.680774 | Churchill Secondary School | 0                      | 0                       |
+| d40411f3-966d-4392-90d1-543492a9ea4a | teacher@churchill.ac.zw              | CHUR001-TC-00000001 | Nyasha Zvinavashe     | teacher | b2222222-2222-2222-2222-222222222222 | 2025-12-04 16:30:56.588465 | 2025-12-04 16:30:56.588465 | Churchill Secondary School | 6                      | 3                       |
+
+
+dashboard/page.tsx:
+`'use client'
+
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/AuthContext'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import DashboardLayout from '@/components/dashboard/DashboardLayout'
+import { Users, GraduationCap, FileText, School, TrendingUp, Calendar } from 'lucide-react'
+
+export default function DashboardPage() {
+  const { user, profile, loading } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/login')
+    }
+  }, [user, loading, router])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!user || !profile) {
+    return null
+  }
+
+  return (
+    <DashboardLayout title="Dashboard">
+      <div className="space-y-6">
+        {/* Welcome Card */}
+        <Card className="bg-linear-to-r from-blue-500 to-blue-700 text-white">
+          <CardHeader>
+            <CardTitle className="text-2xl">Welcome back, {profile.full_name}!</CardTitle>
+            <CardDescription className="text-blue-100">
+              {profile.role === 'super_admin' && 'System Administrator Dashboard'}
+              {profile.role === 'school_admin' && 'School Administrator Dashboard'}
+              {profile.role === 'teacher' && 'Teacher Dashboard'}
+              {profile.role === 'student' && 'Student Dashboard'}
+              {profile.role === 'parent' && 'Parent Dashboard'}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
+        {/* Role-Specific Content */}
+        {profile.role === 'super_admin' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Total Schools</CardTitle>
+                <School className="h-5 w-5 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-blue-600">3</div>
+                <p className="text-xs text-gray-500 mt-1">Active schools in system</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Total Classes</CardTitle>
+                <GraduationCap className="h-5 w-5 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-green-600">54</div>
+                <p className="text-xs text-gray-500 mt-1">Across all schools</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Total Users</CardTitle>
+                <Users className="h-5 w-5 text-purple-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-purple-600">4</div>
+                <p className="text-xs text-gray-500 mt-1">Admins, teachers, students</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">System Health</CardTitle>
+                <TrendingUp className="h-5 w-5 text-emerald-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-emerald-600">100%</div>
+                <p className="text-xs text-gray-500 mt-1">All systems operational</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {profile.role === 'school_admin' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Total Classes</CardTitle>
+                <GraduationCap className="h-5 w-5 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-blue-600">15</div>
+                <p className="text-xs text-gray-500 mt-1">Active classes</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Total Teachers</CardTitle>
+                <Users className="h-5 w-5 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-green-600">1</div>
+                <p className="text-xs text-gray-500 mt-1">Teaching staff</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Total Students</CardTitle>
+                <Users className="h-5 w-5 text-purple-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-purple-600">1</div>
+                <p className="text-xs text-gray-500 mt-1">Enrolled students</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {profile.role === 'teacher' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">My Classes</CardTitle>
+                <GraduationCap className="h-5 w-5 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-blue-600">0</div>
+                <p className="text-xs text-gray-500 mt-1">Assigned classes</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Pending Exams</CardTitle>
+                <FileText className="h-5 w-5 text-orange-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-orange-600">0</div>
+                <p className="text-xs text-gray-500 mt-1">To be graded</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Today's Classes</CardTitle>
+                <Calendar className="h-5 w-5 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-green-600">0</div>
+                <p className="text-xs text-gray-500 mt-1">Scheduled for today</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {profile.role === 'student' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">My Class</CardTitle>
+                <GraduationCap className="h-5 w-5 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">Form 1 A</div>
+                <p className="text-xs text-gray-500 mt-1">Demo High School</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Upcoming Exams</CardTitle>
+                <FileText className="h-5 w-5 text-orange-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-orange-600">0</div>
+                <p className="text-xs text-gray-500 mt-1">Scheduled exams</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Attendance</CardTitle>
+                <TrendingUp className="h-5 w-5 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-green-600">100%</div>
+                <p className="text-xs text-gray-500 mt-1">This term</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Quick Actions */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>Common tasks for your role</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {profile.role === 'super_admin' && (
+                <>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <School className="h-6 w-6" />
+                    <span>Manage Schools</span>
+                  </Button>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <Users className="h-6 w-6" />
+                    <span>Manage Users</span>
+                  </Button>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <FileText className="h-6 w-6" />
+                    <span>System Reports</span>
+                  </Button>
+                </>
+              )}
+              {profile.role === 'school_admin' && (
+                <>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <GraduationCap className="h-6 w-6" />
+                    <span>Manage Classes</span>
+                  </Button>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <Users className="h-6 w-6" />
+                    <span>Manage Students</span>
+                  </Button>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <FileText className="h-6 w-6" />
+                    <span>View Reports</span>
+                  </Button>
+                </>
+              )}
+              {profile.role === 'teacher' && (
+                <>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <GraduationCap className="h-6 w-6" />
+                    <span>My Classes</span>
+                  </Button>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <FileText className="h-6 w-6" />
+                    <span>Create Exam</span>
+                  </Button>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <Calendar className="h-6 w-6" />
+                    <span>Mark Attendance</span>
+                  </Button>
+                </>
+              )}
+              {profile.role === 'student' && (
+                <>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <FileText className="h-6 w-6" />
+                    <span>My Grades</span>
+                  </Button>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <Calendar className="h-6 w-6" />
+                    <span>My Attendance</span>
+                  </Button>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <GraduationCap className="h-6 w-6" />
+                    <span>My Assignments</span>
+                  </Button>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </DashboardLayout>
+  )
+}
+`
+dashboard/teachers/page.tsx:
+`'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/AuthContext'
+import DashboardLayout from '@/components/dashboard/DashboardLayout'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
+import { Plus, School, Users, GraduationCap, ChevronDown, ChevronUp, Trash2, BookOpen, UserCircle } from 'lucide-react'
+
+interface School {
+  id: string
+  name: string
+  school_code: string
+  school_type: string
+  teacher_count: number
+}
+
+interface Teacher {
+  id: string
+  user_id: string
+  username: string
+  full_name: string
+  email: string
+  school_id: string
+  school_name: string
+  school_type: string
+  subjects: string[]
+  classes: string[]
+  assignment_count: number
+}
+
+export default function TeachersPage() {
+  const { user, profile, loading: authLoading } = useAuth()
+  const router = useRouter()
+  const [schools, setSchools] = useState<School[]>([])
+  const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [subjects, setSubjects] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedSchool, setExpandedSchool] = useState<string | null>(null)
+  const [expandedTeacher, setExpandedTeacher] = useState<string | null>(null)
+  
+  const [filterSchoolType, setFilterSchoolType] = useState<string>('all')
+  const [filterSchool, setFilterSchool] = useState<string>('all')
+  const [filterSubject, setFilterSubject] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [selectedSchoolId, setSelectedSchoolId] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login')
+    }
+  }, [user, authLoading, router])
+
+  useEffect(() => {
+    if (profile) {
+      loadData()
+    }
+  }, [profile])
+
+  const loadData = async () => {
+    setLoading(true)
+
+    let schoolsQuery = supabase.from('schools').select('id, name, school_code, school_type').order('school_type').order('name')
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      schoolsQuery = schoolsQuery.eq('id', profile.school_id)
+    }
+
+    const { data: schoolsData } = await schoolsQuery
+    const schoolsWithCount = await Promise.all(
+      (schoolsData || []).map(async (school) => {
+        const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'teacher').eq('school_id', school.id)
+        return { ...school, teacher_count: count || 0 }
+      })
+    )
+    setSchools(schoolsWithCount)
+
+    let subjectsQuery = supabase.from('subjects').select('*').order('name')
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      subjectsQuery = subjectsQuery.eq('school_id', profile.school_id)
+    }
+    const { data: subjectsData } = await subjectsQuery
+    setSubjects(subjectsData || [])
+
+    let teachersQuery = supabase.from('profiles').select('id, username, full_name, email, school_id, schools(name, school_type)').eq('role', 'teacher').order('full_name')
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      teachersQuery = teachersQuery.eq('school_id', profile.school_id)
+    }
+
+    const { data: teachersData } = await teachersQuery
+
+    const teachersWithAssignments = await Promise.all(
+      (teachersData || []).map(async (teacher: any) => {
+        const { data: assignmentsData } = await supabase.from('teacher_subject_assignments').select('subject_id, subjects(name)').eq('teacher_id', teacher.id)
+        const { data: classAssignmentsData } = await supabase.from('class_subject_assignments').select('class_id, classes(grade_level, section)').eq('teacher_id', teacher.id)
+
+        return {
+          id: teacher.id,
+          user_id: teacher.id,
+          username: teacher.username,
+          full_name: teacher.full_name,
+          email: teacher.email,
+          school_id: teacher.school_id,
+          school_name: teacher.schools?.name || 'Unknown',
+          school_type: teacher.schools?.school_type || 'Unknown',
+          subjects: assignmentsData?.map((a: any) => a.subjects?.name).filter(Boolean) || [],
+          classes: classAssignmentsData?.map((a: any) => `${a.classes?.grade_level} ${a.classes?.section}`).filter(Boolean) || [],
+          assignment_count: (assignmentsData?.length || 0) + (classAssignmentsData?.length || 0)
+        }
+      })
+    )
+    setTeachers(teachersWithAssignments)
+    setLoading(false)
+  }
+
+  const generateTeacherUsername = (schoolCode: string) => {
+    const randomNum = Math.floor(10000000 + Math.random() * 90000000)
+    return `${schoolCode}-TC-${randomNum}`
+  }
+
+  const handleCreateTeacher = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitting(true)
+
+    try {
+      const school = schools.find(s => s.id === selectedSchoolId)
+      if (!school) throw new Error('School not found')
+
+      const username = generateTeacherUsername(school.school_code)
+
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: email,
+        password: password,
+        email_confirm: true,
+        user_metadata: { full_name: fullName }
+      })
+
+      if (authError) throw authError
+
+      const { error: profileError } = await supabase.from('profiles').insert({
+        id: authData.user.id,
+        email: email,
+        username: username,
+        full_name: fullName,
+        role: 'teacher',
+        school_id: selectedSchoolId
+      })
+
+      if (profileError) throw profileError
+
+      toast.success('Teacher created successfully!', { description: `Username: ${username}` })
+      setDialogOpen(false)
+      setFullName('')
+      setEmail('')
+      setPassword('')
+      setSelectedSchoolId('')
+      loadData()
+    } catch (error: any) {
+      toast.error('Failed to create teacher', { description: error.message })
+    }
+    setSubmitting(false)
+  }
+
+  const handleDeleteTeacher = async (teacherId: string, teacherName: string) => {
+    if (!confirm(`Delete ${teacherName}? All assignments will be removed.`)) return
+    const { error } = await supabase.from('profiles').delete().eq('id', teacherId)
+    if (error) {
+      toast.error('Failed to delete teacher')
+    } else {
+      toast.success('Teacher deleted successfully!')
+      loadData()
+    }
+  }
+
+  const filteredTeachers = teachers.filter(teacher => {
+    if (filterSchoolType !== 'all' && teacher.school_type !== filterSchoolType) return false
+    if (filterSchool !== 'all' && teacher.school_id !== filterSchool) return false
+    if (filterSubject !== 'all' && !teacher.subjects.includes(subjects.find(s => s.id === filterSubject)?.name)) return false
+    if (searchQuery && !teacher.full_name.toLowerCase().includes(searchQuery.toLowerCase()) && 
+        !teacher.username.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    return true
+  })
+
+  const filteredSchools = schools.filter(school => {
+    if (filterSchoolType !== 'all' && school.school_type !== filterSchoolType) return false
+    return filteredTeachers.some(teacher => teacher.school_id === school.id)
+  })
+
+  if (authLoading || loading) {
+    return <DashboardLayout title="Teachers Management"><div>Loading...</div></DashboardLayout>
+  }
+
+  return (
+    <DashboardLayout title="Teachers Management">
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <p className="text-gray-600">Manage teachers and their assignments</p>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-blue-600 hover:bg-blue-700"><Plus className="w-4 h-4 mr-2" />Create Teacher</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Create New Teacher</DialogTitle><DialogDescription>Add a new teacher to the system</DialogDescription></DialogHeader>
+              <form onSubmit={handleCreateTeacher} className="space-y-4">
+                <div><Label>Full Name *</Label><Input placeholder="e.g., John Doe" value={fullName} onChange={(e) => setFullName(e.target.value)} required /></div>
+                <div><Label>Email *</Label><Input type="email" placeholder="teacher@school.com" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
+                <div><Label>Password *</Label><Input type="password" placeholder="Enter password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+                <div><Label>School *</Label>
+                  <Select value={selectedSchoolId} onValueChange={setSelectedSchoolId} required>
+                    <SelectTrigger><SelectValue placeholder="Select school" /></SelectTrigger>
+                    <SelectContent>{schools.map((school) => <SelectItem key={school.id} value={school.id}>{school.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <Button type="submit" className="w-full" disabled={submitting}>{submitting ? 'Creating...' : 'Create Teacher'}</Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <Card>
+          <CardHeader><CardTitle className="text-lg">Filters</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div><Label>School Type</Label>
+                <Select value={filterSchoolType} onValueChange={setFilterSchoolType}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="Primary">Primary</SelectItem><SelectItem value="Secondary">Secondary</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div><Label>School</Label>
+                <Select value={filterSchool} onValueChange={setFilterSchool}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="all">All Schools</SelectItem>{filteredSchools.map((school) => <SelectItem key={school.id} value={school.id}>{school.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div><Label>Subject</Label>
+                <Select value={filterSubject} onValueChange={setFilterSubject}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="all">All Subjects</SelectItem>{subjects.filter(s => filterSchool === 'all' || s.school_id === filterSchool).map((subj: any) => <SelectItem key={subj.id} value={subj.id}>{subj.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div><Label>Search</Label><Input placeholder="Name or username..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Total Teachers</CardTitle></CardHeader>
+            <CardContent><div className="text-4xl font-bold">{filteredTeachers.length}</div></CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+            <CardHeader><CardTitle className="text-sm font-medium opacity-90">With Assignments</CardTitle></CardHeader>
+            <CardContent><div className="text-4xl font-bold">{filteredTeachers.filter(t => t.assignment_count > 0).length}</div></CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Total Assignments</CardTitle></CardHeader>
+            <CardContent><div className="text-4xl font-bold">{filteredTeachers.reduce((sum, t) => sum + t.assignment_count, 0)}</div></CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          {['Primary', 'Secondary'].map((schoolType) => {
+            const schoolsOfType = filteredSchools.filter(s => s.school_type === schoolType)
+            if (schoolsOfType.length === 0) return null
+
+            return (
+              <div key={schoolType}>
+                <h2 className="text-2xl font-bold mb-4 flex items-center"><GraduationCap className="mr-2" />{schoolType} Schools</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {schoolsOfType.map((school) => {
+                    const schoolTeachers = filteredTeachers.filter(t => t.school_id === school.id)
+                    const isExpanded = expandedSchool === school.id
+
+                    return (
+                      <div key={school.id} className="space-y-2">
+                        <Card className="cursor-pointer hover:shadow-lg transition-all" onClick={() => setExpandedSchool(isExpanded ? null : school.id)}>
+                          <CardHeader className="pb-3">
+                            <div className="flex justify-between items-start">
+                              <div><CardTitle className="text-lg">{school.name}</CardTitle><p className="text-sm text-gray-500">{school.school_code}</p></div>
+                              {isExpanded ? <ChevronUp /> : <ChevronDown />}
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center text-gray-600"><Users className="w-4 h-4 mr-2" /><span className="text-sm">{schoolTeachers.length} Teachers</span></div>
+                              <Badge variant="outline">{school.school_type}</Badge>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {isExpanded && schoolTeachers.length > 0 && (
+                          <div className="ml-4 space-y-2 animate-in slide-in-from-top">
+                            {schoolTeachers.map((teacher) => {
+                              const isTeacherExpanded = expandedTeacher === teacher.id
+
+                              return (
+                                <Card key={teacher.id} className="cursor-pointer hover:shadow-md transition-all" onClick={(e) => { e.stopPropagation(); setExpandedTeacher(isTeacherExpanded ? null : teacher.id) }}>
+                                  <CardHeader className="py-3">
+                                    <div className="flex justify-between items-center">
+                                      <div className="flex items-center gap-3">
+                                        <UserCircle className="w-8 h-8 text-gray-400" />
+                                        <div><CardTitle className="text-base">{teacher.full_name}</CardTitle><p className="text-xs text-gray-500">{teacher.username}</p></div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge>{teacher.assignment_count} assignments</Badge>
+                                        {isTeacherExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                      </div>
+                                    </div>
+                                  </CardHeader>
+
+                                  {isTeacherExpanded && (
+                                    <CardContent className="space-y-3 border-t pt-3">
+                                      <div className="grid grid-cols-2 gap-3 text-sm">
+                                        <div><span className="text-gray-500">Email:</span><p className="font-medium">{teacher.email}</p></div>
+                                        <div><span className="text-gray-500">School:</span><p className="font-medium">{teacher.school_name}</p></div>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500 text-sm flex items-center mb-1"><BookOpen className="w-3 h-3 mr-1" />Subjects:</span>
+                                        <div className="flex flex-wrap gap-1">
+                                          {teacher.subjects.length > 0 ? teacher.subjects.map((subj, idx) => <Badge key={idx} variant="outline">{subj}</Badge>) : <span className="text-xs text-gray-400">No subjects assigned</span>}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500 text-sm flex items-center mb-1"><GraduationCap className="w-3 h-3 mr-1" />Classes:</span>
+                                        <div className="flex flex-wrap gap-1">
+                                          {teacher.classes.length > 0 ? teacher.classes.map((cls, idx) => <Badge key={idx} variant="outline">{cls}</Badge>) : <span className="text-xs text-gray-400">No classes assigned</span>}
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-2 pt-2">
+                                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); router.push('/dashboard/teacher-assignments') }}>
+                                          <BookOpen className="w-3 h-3 mr-1" />Manage Assignments
+                                        </Button>
+                                        <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); handleDeleteTeacher(teacher.id, teacher.full_name) }}>
+                                          <Trash2 className="w-3 h-3 mr-1" />Delete
+                                        </Button>
+                                      </div>
+                                    </CardContent>
+                                  )}
+                                </Card>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                        {isExpanded && schoolTeachers.length === 0 && (
+                          <Card className="ml-4"><CardContent className="py-6 text-center text-gray-500">No teachers found for this school</CardContent></Card>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </DashboardLayout>
+  )
+}`
+
+dashboard/attendance/page.tsx:
+`'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/AuthContext'
+import DashboardLayout from '@/components/dashboard/DashboardLayout'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
+import { Loader2, Calendar, CheckCircle, XCircle, Clock, Download, Upload, Users, TrendingUp } from 'lucide-react'
+
+interface Student {
+  id: string
+  roll_number: string
+  full_name: string
+  user_id: string
+}
+
+interface AttendanceRecord {
+  id: string
+  student_id: string
+  class_id: string
+  date: string
+  status: 'present' | 'absent' | 'late' | 'excused'
+  remarks: string | null
+  marked_by: string
+  marked_at: string
+  student_name: string
+  roll_number: string
+}
+
+interface ClassInfo {
+  id: string
+  grade_level: string
+  section: string
+  student_count: number
+}
+
+interface AttendanceStats {
+  totalDays: number
+  presentDays: number
+  absentDays: number
+  lateDays: number
+  attendanceRate: number
+}
+
+export default function AttendanceRegisterPage() {
+  const { user, profile, loading: authLoading } = useAuth()
+  const router = useRouter()
+  const [classes, setClasses] = useState<ClassInfo[]>([])
+  const [students, setStudents] = useState<Student[]>([])
+  const [attendance, setAttendance] = useState<Map<string, string>>(new Map())
+  const [remarks, setRemarks] = useState<Map<string, string>>(new Map())
+  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [selectedClass, setSelectedClass] = useState<string>('')
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [viewDate, setViewDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [activeTab, setActiveTab] = useState<string>('mark')
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [selectedStudent, setSelectedStudent] = useState<string | null>(null)
+  const [studentStats, setStudentStats] = useState<AttendanceStats | null>(null)
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login')
+    }
+  }, [user, authLoading, router])
+
+  useEffect(() => {
+    if (profile) {
+      fetchClasses()
+    }
+  }, [profile])
+
+  useEffect(() => {
+    if (selectedClass) {
+      fetchStudents()
+      checkExistingAttendance()
+    }
+  }, [selectedClass, selectedDate])
+
+  useEffect(() => {
+    if (selectedClass && activeTab === 'history') {
+      fetchAttendanceHistory()
+    }
+  }, [selectedClass, viewDate, activeTab])
+
+  const fetchClasses = async () => {
+    try {
+      setLoading(true)
+      let query = supabase
+        .from('classes')
+        .select('id, grade_level, section')
+        .order('grade_level')
+
+      // Filter by school or teacher assignment
+      if (profile?.role === 'teacher') {
+        // If teacher, show only their assigned classes
+        query = query.eq('class_teacher_id', profile.id)
+      } else if (profile?.role !== 'super_admin' && profile?.school_id) {
+        query = query.eq('school_id', profile.school_id)
+      }
+
+      const { data: classData, error } = await query
+
+      if (error) throw error
+
+      // Get student count for each class
+      const classesWithCount = await Promise.all(
+        (classData || []).map(async (cls) => {
+          const { count } = await supabase
+            .from('students')
+            .select('*', { count: 'exact', head: true })
+            .eq('class_id', cls.id)
+
+          return {
+            id: cls.id,
+            grade_level: cls.grade_level,
+            section: cls.section,
+            student_count: count || 0,
+          }
+        })
+      )
+
+      setClasses(classesWithCount)
+      if (classesWithCount.length > 0) {
+        setSelectedClass(classesWithCount[0].id)
+      }
+    } catch (error: any) {
+      console.error('Error fetching classes:', error)
+      toast.error('Failed to load classes')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchStudents = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('students')
+        .select('id, roll_number, user_id, profiles!students_user_id_fkey(full_name)')
+        .eq('class_id', selectedClass)
+        .order('roll_number')
+
+      if (error) throw error
+
+      const studentsList: Student[] = (data || []).map((s: any) => ({
+        id: s.id,
+        roll_number: s.roll_number,
+        full_name: s.profiles?.full_name || 'Unknown',
+        user_id: s.user_id,
+      }))
+
+      setStudents(studentsList)
+    } catch (error: any) {
+      console.error('Error fetching students:', error)
+      toast.error('Failed to load students')
+    }
+  }
+
+  const checkExistingAttendance = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('student_id, status, remarks')
+        .eq('class_id', selectedClass)
+        .eq('date', selectedDate)
+
+      if (error) throw error
+
+      const attendanceMap = new Map<string, string>()
+      const remarksMap = new Map<string, string>()
+
+      data?.forEach((record: any) => {
+        attendanceMap.set(record.student_id, record.status)
+        if (record.remarks) {
+          remarksMap.set(record.student_id, record.remarks)
+        }
+      })
+
+      setAttendance(attendanceMap)
+      setRemarks(remarksMap)
+    } catch (error: any) {
+      console.error('Error checking attendance:', error)
+    }
+  }
+
+  const fetchAttendanceHistory = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select(`
+          id,
+          student_id,
+          class_id,
+          date,
+          status,
+          remarks,
+          marked_by,
+          marked_at,
+          students!attendance_student_id_fkey(
+            roll_number,
+            profiles!students_user_id_fkey(full_name)
+          )
+        `)
+        .eq('class_id', selectedClass)
+        .eq('date', viewDate)
+        .order('students(roll_number)')
+
+      if (error) throw error
+
+      const records: AttendanceRecord[] = (data || []).map((record: any) => ({
+        id: record.id,
+        student_id: record.student_id,
+        class_id: record.class_id,
+        date: record.date,
+        status: record.status,
+        remarks: record.remarks,
+        marked_by: record.marked_by,
+        marked_at: record.marked_at,
+        student_name: record.students?.profiles?.full_name || 'Unknown',
+        roll_number: record.students?.roll_number || 'N/A',
+      }))
+
+      setAttendanceHistory(records)
+    } catch (error: any) {
+      console.error('Error fetching attendance history:', error)
+      toast.error('Failed to load attendance history')
+    }
+  }
+
+  const markAttendance = (studentId: string, status: string) => {
+    const newAttendance = new Map(attendance)
+    newAttendance.set(studentId, status)
+    setAttendance(newAttendance)
+  }
+
+  const markAllPresent = () => {
+    const newAttendance = new Map<string, string>()
+    students.forEach(student => {
+      newAttendance.set(student.id, 'present')
+    })
+    setAttendance(newAttendance)
+    toast.success('Marked all students as present')
+  }
+
+  const setRemark = (studentId: string, remark: string) => {
+    const newRemarks = new Map(remarks)
+    if (remark.trim()) {
+      newRemarks.set(studentId, remark)
+    } else {
+      newRemarks.delete(studentId)
+    }
+    setRemarks(newRemarks)
+  }
+
+  const saveAttendance = async () => {
+    if (attendance.size === 0) {
+      toast.error('Please mark attendance for at least one student')
+      return
+    }
+
+    try {
+      setSaving(true)
+
+      // Prepare attendance records
+      const attendanceRecords = Array.from(attendance.entries()).map(([studentId, status]) => ({
+        student_id: studentId,
+        class_id: selectedClass,
+        date: selectedDate,
+        status: status,
+        remarks: remarks.get(studentId) || null,
+        marked_by: profile?.id,
+        school_id: profile?.school_id,
+      }))
+
+      // Delete existing records for this date/class
+      await supabase
+        .from('attendance')
+        .delete()
+        .eq('class_id', selectedClass)
+        .eq('date', selectedDate)
+
+      // Insert new records
+      const { error } = await supabase.from('attendance').insert(attendanceRecords)
+
+      if (error) throw error
+
+      toast.success('Attendance saved successfully!')
+      setAttendance(new Map())
+      setRemarks(new Map())
+    } catch (error: any) {
+      console.error('Error saving attendance:', error)
+      toast.error('Failed to save attendance: ' + error.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const fetchStudentStats = async (studentId: string) => {
+    try {
+      const startOfMonth = new Date()
+      startOfMonth.setDate(1)
+      const startDate = startOfMonth.toISOString().split('T')[0]
+
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('status')
+        .eq('student_id', studentId)
+        .gte('date', startDate)
+
+      if (error) throw error
+
+      const totalDays = data?.length || 0
+      const presentDays = data?.filter(r => r.status === 'present').length || 0
+      const absentDays = data?.filter(r => r.status === 'absent').length || 0
+      const lateDays = data?.filter(r => r.status === 'late').length || 0
+      const attendanceRate = totalDays > 0 ? (presentDays / totalDays) * 100 : 0
+
+      setStudentStats({
+        totalDays,
+        presentDays,
+        absentDays,
+        lateDays,
+        attendanceRate,
+      })
+    } catch (error: any) {
+      console.error('Error fetching student stats:', error)
+    }
+  }
+
+  const exportAttendancePDF = async () => {
+    // This is a placeholder - you'll need to implement PDF generation
+    // You can use libraries like jsPDF or pdfmake
+    toast.info('PDF export feature coming soon!')
+    
+    // Example: Create CSV export instead
+    const csvData = attendanceHistory.map(record => ({
+      'Roll Number': record.roll_number,
+      'Student Name': record.student_name,
+      'Date': record.date,
+      'Status': record.status,
+      'Remarks': record.remarks || '',
+    }))
+
+    const csv = [
+      Object.keys(csvData[0]).join(','),
+      ...csvData.map(row => Object.values(row).join(','))
+    ].join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `attendance_${selectedClass}_${viewDate}.csv`
+    a.click()
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'present':
+        return <Badge className="bg-green-500">Present</Badge>
+      case 'absent':
+        return <Badge className="bg-red-500">Absent</Badge>
+      case 'late':
+        return <Badge className="bg-yellow-500">Late</Badge>
+      case 'excused':
+        return <Badge className="bg-blue-500">Excused</Badge>
+      default:
+        return <Badge variant="outline">Not Marked</Badge>
+    }
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'present':
+        return <CheckCircle className="h-5 w-5 text-green-600" />
+      case 'absent':
+        return <XCircle className="h-5 w-5 text-red-600" />
+      case 'late':
+        return <Clock className="h-5 w-5 text-yellow-600" />
+      case 'excused':
+        return <CheckCircle className="h-5 w-5 text-blue-600" />
+      default:
+        return null
+    }
+  }
+
+  const getTodayStats = () => {
+    const total = students.length
+    const marked = attendance.size
+    const present = Array.from(attendance.values()).filter(s => s === 'present').length
+    const absent = Array.from(attendance.values()).filter(s => s === 'absent').length
+    const late = Array.from(attendance.values()).filter(s => s === 'late').length
+
+    return { total, marked, present, absent, late }
+  }
+
+  if (authLoading || loading) {
+    return (
+      <DashboardLayout title="Attendance Register">
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  if (!user || !profile) return null
+
+  const stats = getTodayStats()
+  const selectedClassInfo = classes.find(c => c.id === selectedClass)
+
+  return (
+    <DashboardLayout title="Attendance Register">
+      <div className="space-y-6">
+        {/* Summary Cards */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Total Students
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.total}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                Present
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{stats.present}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <XCircle className="h-4 w-4 text-red-600" />
+                Absent
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">{stats.absent}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Clock className="h-4 w-4 text-yellow-600" />
+                Late
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{stats.late}</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main Content */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Attendance Register</CardTitle>
+            <CardDescription>
+              Mark daily attendance for your classes
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="mark">Mark Attendance</TabsTrigger>
+                <TabsTrigger value="history">View History</TabsTrigger>
+              </TabsList>
+
+              {/* Mark Attendance Tab */}
+              <TabsContent value="mark" className="space-y-4">
+                {/* Class and Date Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Select Class</Label>
+                    <Select value={selectedClass} onValueChange={setSelectedClass}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose class" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {classes.map((cls) => (
+                          <SelectItem key={cls.id} value={cls.id}>
+                            {cls.grade_level} {cls.section} ({cls.student_count} students)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Date</Label>
+                    <Input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>&nbsp;</Label>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={markAllPresent}
+                    >
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Mark All Present
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                {stats.total > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Progress: {stats.marked} / {stats.total} marked</span>
+                      <span>{Math.round((stats.marked / stats.total) * 100)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all"
+                        style={{ width: `${(stats.marked / stats.total) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Students List */}
+                {students.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    No students found in this class
+                  </div>
+                ) : (
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Roll</TableHead>
+                          <TableHead>Student Name</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Quick Mark</TableHead>
+                          <TableHead>Remarks</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {students.map((student) => (
+                          <TableRow key={student.id}>
+                            <TableCell className="font-medium">
+                              {student.roll_number}
+                            </TableCell>
+                            <TableCell>{student.full_name}</TableCell>
+                            <TableCell>
+                              {getStatusBadge(attendance.get(student.id) || '')}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant={attendance.get(student.id) === 'present' ? 'default' : 'outline'}
+                                  onClick={() => markAttendance(student.id, 'present')}
+                                  className={attendance.get(student.id) === 'present' ? 'bg-green-600 hover:bg-green-700' : ''}
+                                >
+                                  <CheckCircle className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={attendance.get(student.id) === 'absent' ? 'default' : 'outline'}
+                                  onClick={() => markAttendance(student.id, 'absent')}
+                                  className={attendance.get(student.id) === 'absent' ? 'bg-red-600 hover:bg-red-700' : ''}
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={attendance.get(student.id) === 'late' ? 'default' : 'outline'}
+                                  onClick={() => markAttendance(student.id, 'late')}
+                                  className={attendance.get(student.id) === 'late' ? 'bg-yellow-600 hover:bg-yellow-700' : ''}
+                                >
+                                  <Clock className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                placeholder="Add remarks..."
+                                value={remarks.get(student.id) || ''}
+                                onChange={(e) => setRemark(student.id, e.target.value)}
+                                className="w-full"
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+
+                    <div className="flex justify-end gap-2 pt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setAttendance(new Map())
+                          setRemarks(new Map())
+                        }}
+                      >
+                        Clear All
+                      </Button>
+                      <Button
+                        onClick={saveAttendance}
+                        disabled={saving || attendance.size === 0}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Attendance
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </TabsContent>
+
+              {/* History Tab */}
+              <TabsContent value="history" className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Select Class</Label>
+                    <Select value={selectedClass} onValueChange={setSelectedClass}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose class" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {classes.map((cls) => (
+                          <SelectItem key={cls.id} value={cls.id}>
+                            {cls.grade_level} {cls.section}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>View Date</Label>
+                    <Input
+                      type="date"
+                      value={viewDate}
+                      onChange={(e) => setViewDate(e.target.value)}
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>&nbsp;</Label>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={exportAttendancePDF}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export CSV
+                    </Button>
+                  </div>
+                </div>
+
+                {attendanceHistory.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    No attendance records found for this date
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Roll</TableHead>
+                        <TableHead>Student Name</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Remarks</TableHead>
+                        <TableHead>Marked At</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {attendanceHistory.map((record) => (
+                        <TableRow key={record.id}>
+                          <TableCell className="font-medium">
+                            {record.roll_number}
+                          </TableCell>
+                          <TableCell>{record.student_name}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {getStatusIcon(record.status)}
+                              {getStatusBadge(record.status)}
+                            </div>
+                          </TableCell>
+                          <TableCell>{record.remarks || '-'}</TableCell>
+                          <TableCell className="text-sm text-gray-600">
+                            {new Date(record.marked_at).toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      </div>
+    </DashboardLayout>
+  )
+}`
+
+components/dashboard/DashboadLayout.tsx:
+`'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/AuthContext'
+import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { 
+  LayoutDashboard, 
+  School, 
+  GraduationCap, 
+  Users, 
+  FileText, 
+  Settings, 
+  LogOut,
+  UserCog,
+  Link2,
+  BookOpen,
+  Menu,
+  X
+} from 'lucide-react'
+
+interface DashboardLayoutProps {
+  children: React.ReactNode
+  title?: string
+}
+
+export default function DashboardLayout({ children, title }: DashboardLayoutProps) {
+  const { profile, signOut } = useAuth()
+  const pathname = usePathname()
+  const router = useRouter()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  const getNavItems = () => {
+    const role = profile?.role
+
+    if (role === 'super_admin') {
+      return [
+        { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+        { href: '/dashboard/schools', icon: School, label: 'Schools' },
+        { href: '/dashboard/classes', icon: GraduationCap, label: 'Classes' },
+        { href: '/dashboard/teacher-assignments', icon: UserCog, label: 'Teacher Assignments' },
+        { href: '/dashboard/students', icon: Users, label: 'Students' },
+        { href: '/dashboard/parents', icon: Link2, label: 'Parent Management' },
+        { href: '/dashboard/exams', icon: FileText, label: 'Exams' },
+      ]
+    }
+
+    if (role === 'school_admin') {
+      return [
+        { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+        { href: '/dashboard/classes', icon: GraduationCap, label: 'Classes' },
+        { href: '/dashboard/teacher-assignments', icon: UserCog, label: 'Teacher Assignments' },
+        { href: '/dashboard/students', icon: Users, label: 'Students' },
+        { href: '/dashboard/parents', icon: Link2, label: 'Parent Management' },
+        { href: '/dashboard/exams', icon: FileText, label: 'Exams' },
+      ]
+    }
+
+    if (role === 'teacher') {
+      return [
+        { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+        { href: '/dashboard/classes', icon: GraduationCap, label: 'Classes' },
+        { href: '/dashboard/students', icon: Users, label: 'Students' },
+        { href: '/dashboard/exams', icon: FileText, label: 'Exams' },
+        { href: '/dashboard/lesson-plans', icon: BookOpen, label: 'Lesson Plans' },
+        { href: '/dashboard/assignments', icon: FileText, label: 'Assignments' },
+        { href: '/dashboard/attendance', icon: Users, label: 'Attendance' },
+      ]
+    }
+
+    if (role === 'student') {
+      return [
+        { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+        { href: '/dashboard/my-grades', icon: BookOpen, label: 'My Grades' },
+      ]
+    }
+
+    if (role === 'parent') {
+      return [
+        { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+        { href: '/dashboard/children-grades', icon: BookOpen, label: "Children's Grades" },
+      ]
+    }
+
+    return []
+  }
+
+  const handleSignOut = async () => {
+    await signOut()
+    router.push('/login')
+  }
+
+  const handleNavClick = () => {
+    setSidebarOpen(false) // Close sidebar on mobile after clicking a link
+  }
+
+  const navItems = getNavItems()
+  const initials = profile?.full_name
+    ?.split(' ')
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase() || '?'
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
+      {/* Mobile Header */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-40">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="lg:hidden"
+          >
+            {sidebarOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </Button>
+          <h1 className="text-lg font-semibold">{title || 'Dashboard'}</h1>
+        </div>
+        <Avatar className="h-8 w-8">
+          <AvatarFallback className="bg-blue-600 text-white text-xs">{initials}</AvatarFallback>
+        </Avatar>
+      </div>
+
+      {/* Overlay for mobile */}
+      {sidebarOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`
+          fixed lg:static top-0 left-0 h-screen lg:h-auto bg-white border-r border-gray-200 z-50
+          transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          lg:translate-x-0 lg:z-auto
+          w-64 flex flex-col
+        `}
+      >
+        {/* Logo/Brand */}
+        <div className="h-16 flex items-center justify-center border-b border-gray-200 px-4">
+          <h1 className="text-xl font-bold text-gray-800">Eschools ERP</h1>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto py-4 px-3">
+          <div className="space-y-1">
+            {navItems.map((item) => {
+              const isActive = pathname === item.href
+              const Icon = item.icon
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={handleNavClick}
+                  className={`
+                    flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                    ${
+                      isActive
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }
+                  `}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span>{item.label}</span>
+                </Link>
+              )
+            })}
+          </div>
+        </nav>
+
+        {/* User Profile Section */}
+        <div className="border-t border-gray-200 p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <Avatar className="h-10 w-10">
+              <AvatarFallback className="bg-blue-600 text-white">{initials}</AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">
+                {profile?.full_name}
+              </p>
+              <p className="text-xs text-gray-500 truncate capitalize">
+                {profile?.role?.replace('_', ' ')}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
+            onClick={handleSignOut}
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            Sign Out
+          </Button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 pt-16 lg:pt-0 overflow-y-auto">
+        <div className="p-4 lg:p-8">
+          {/* Desktop Title */}
+          {title && (
+            <div className="hidden lg:block mb-6">
+              <h1 className="text-3xl font-bold text-gray-900">{title}</h1>
+            </div>
+          )}
+          {children}
+        </div>
+      </main>
+    </div>
+  )
+}
+`
+
+
+
+
+
+Now can ou help me make my Teacher Whole dashboard look more more nicer. BTW this ERP we as Robokorda we are trying to make it for the clients which will be schools, Primary and Secondary Schools, so each dashboard should be customized for the school we give, which incudes their logo there and ther name, etc, so for now i now you to make these changes using just placeholder things and images. also  would like robokorda africa at the boom footer nicely presented, with robokorda logo, nicely presented.

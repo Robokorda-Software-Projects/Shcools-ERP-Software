@@ -4,66 +4,43 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
-import { Plus, School, Users, GraduationCap, ChevronDown, ChevronUp, Edit, Trash2 } from 'lucide-react'
+import { GraduationCap, Users, ChevronDown, ChevronUp, UserCircle, Mail, Calendar, BookOpen } from 'lucide-react'
 
-interface School {
-  id: string
-  name: string
-  school_code: string
-  school_type: string
-  class_count: number
-}
-
-interface Class {
+interface ClassInfo {
   id: string
   grade_level: string
   section: string
   academic_year: string
-  school_id: string
-  school_name: string
   student_count: number
-  expanded: boolean
+  subjects: string[]
 }
 
-export default function ClassesPage() {
+interface Student {
+  id: string
+  user_id: string
+  username: string
+  full_name: string
+  email: string
+  roll_number: string
+  admission_date: string
+  parent_name: string | null
+}
+
+export default function TeacherClassesPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [schools, setSchools] = useState<School[]>([])
-  const [classes, setClasses] = useState<Class[]>([])
+  const [classes, setClasses] = useState<ClassInfo[]>([])
+  const [students, setStudents] = useState<Map<string, Student[]>>(new Map())
   const [loading, setLoading] = useState(true)
-  const [expandedSchool, setExpandedSchool] = useState<string | null>(null)
   const [expandedClass, setExpandedClass] = useState<string | null>(null)
-  
-  // Filters
-  const [filterSchoolType, setFilterSchoolType] = useState<string>('all')
-  const [filterSchool, setFilterSchool] = useState<string>('all')
-  const [filterGrade, setFilterGrade] = useState<string>('all')
-  const [filterSection, setFilterSection] = useState<string>('all')
+  const [expandedStudent, setExpandedStudent] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-
-  // Create dialog
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [selectedSchoolId, setSelectedSchoolId] = useState('')
-  const [gradeLevel, setGradeLevel] = useState('')
-  const [section, setSection] = useState('')
-  const [academicYear, setAcademicYear] = useState('2025')
-  const [submitting, setSubmitting] = useState(false)
-
-  const gradeLevels = [
-    'ECD A', 'ECD B', 'ECD C',
-    'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7',
-    'Form 1', 'Form 2', 'Form 3', 'Form 4',
-    'Lower 6', 'Upper 6'
-  ]
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -80,294 +57,195 @@ export default function ClassesPage() {
   const loadData = async () => {
     setLoading(true)
 
-    // Load schools
-    const { data: schoolsData, error: schoolsError } = await supabase
-      .from('schools')
-      .select('id, name, school_code, school_type')
-      .order('school_type', { ascending: true })
-      .order('name', { ascending: true })
+    try {
+      if (profile?.role === 'teacher') {
+        // Get classes assigned to teacher
+        const { data: classAssignments } = await supabase
+          .from('class_subject_assignments')
+          .select(`
+            class_id,
+            subject_id,
+            classes!inner(
+              id,
+              grade_level,
+              section,
+              academic_year,
+              school_id
+            ),
+            subjects(name)
+          `)
+          .eq('teacher_id', profile.id)
+          .eq('classes.school_id', profile.school_id)
 
-    if (schoolsError) {
-      toast.error('Failed to load schools')
-      console.error(schoolsError)
-    } else {
-      // Count classes per school
-      const schoolsWithCount = await Promise.all(
-        (schoolsData || []).map(async (school) => {
-          const { count } = await supabase
-            .from('classes')
-            .select('*', { count: 'exact', head: true })
-            .eq('school_id', school.id)
-          return { ...school, class_count: count || 0 }
+        // Group by class
+        const classMap = new Map<string, ClassInfo>()
+        
+        classAssignments?.forEach((assignment: any) => {
+          const cls = assignment.classes
+          const classId = cls.id
+
+          if (!classMap.has(classId)) {
+            classMap.set(classId, {
+              id: cls.id,
+              grade_level: cls.grade_level,
+              section: cls.section,
+              academic_year: cls.academic_year,
+              student_count: 0,
+              subjects: []
+            })
+          }
+
+          const classInfo = classMap.get(classId)!
+          if (assignment.subjects?.name && !classInfo.subjects.includes(assignment.subjects.name)) {
+            classInfo.subjects.push(assignment.subjects.name)
+          }
         })
-      )
-      setSchools(schoolsWithCount)
-    }
 
-    // Load classes with student counts
-    const { data: classesData, error: classesError } = await supabase
-      .from('classes')
-      .select(`
-        id,
-        grade_level,
-        section,
-        academic_year,
-        school_id,
-        schools(name)
-      `)
-      .order('grade_level', { ascending: true })
-      .order('section', { ascending: true })
-
-    if (classesError) {
-      toast.error('Failed to load classes')
-      console.error(classesError)
-    } else {
-      const classesWithCount = await Promise.all(
-        (classesData || []).map(async (cls: any) => {
+        // Get student counts
+        const classesArray = Array.from(classMap.values())
+        for (const cls of classesArray) {
           const { count } = await supabase
             .from('students')
             .select('*', { count: 'exact', head: true })
             .eq('class_id', cls.id)
-          return {
-            id: cls.id,
-            grade_level: cls.grade_level,
-            section: cls.section,
-            academic_year: cls.academic_year,
-            school_id: cls.school_id,
-            school_name: cls.schools?.name || 'Unknown',
-            student_count: count || 0,
-            expanded: false
-          }
+          
+          cls.student_count = count || 0
+        }
+
+        // Sort by grade level
+        classesArray.sort((a, b) => {
+          if (a.grade_level < b.grade_level) return -1
+          if (a.grade_level > b.grade_level) return 1
+          return a.section.localeCompare(b.section)
         })
-      )
-      setClasses(classesWithCount)
+
+        setClasses(classesArray)
+      }
+    } catch (error) {
+      console.error('Error loading classes:', error)
+      toast.error('Failed to load classes')
     }
 
     setLoading(false)
   }
 
-  const handleCreateClass = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitting(true)
+  const loadStudentsForClass = async (classId: string) => {
+    if (students.has(classId)) return // Already loaded
 
-    const { error } = await supabase
-      .from('classes')
-      .insert({
-        school_id: selectedSchoolId,
-        grade_level: gradeLevel,
-        section: section,
-        academic_year: academicYear
+    try {
+      console.log('Loading students for class:', classId)
+      
+      // CRITICAL: Do NOT query roll_number, admission_date, or school_id
+      // Only query columns that are guaranteed to exist
+      const { data, error } = await supabase
+        .from('students')
+        .select(`
+          id,
+          user_id,
+          profiles!students_user_id_fkey(username, full_name, email),
+          parent:profiles!students_parent_id_fkey(full_name)
+        `)
+        .eq('class_id', classId)
+
+      if (error) {
+        console.error('Supabase error:', error)
+        throw error
+      }
+
+      console.log('Raw student data received:', data)
+      console.log('Number of students:', data?.length || 0)
+
+      // Map the data without relying on database roll_number
+      const studentsList: Student[] = (data || []).map((s: any, index: number) => {
+        console.log('Processing student:', s.id, s.profiles?.full_name)
+        return {
+          id: s.id,
+          user_id: s.user_id,
+          username: s.profiles?.username || 'Unknown',
+          full_name: s.profiles?.full_name || 'Unknown',
+          email: s.profiles?.email || 'N/A',
+          roll_number: `#${String(index + 1).padStart(2, '0')}`, // Generate display number
+          admission_date: 'Not recorded',
+          parent_name: s.parent?.full_name || null
+        }
       })
 
-    if (error) {
-      toast.error('Failed to create class', { description: error.message })
-    } else {
-      toast.success('Class created successfully!')
-      setDialogOpen(false)
-      setSelectedSchoolId('')
-      setGradeLevel('')
-      setSection('')
-      loadData()
-    }
-    setSubmitting(false)
-  }
-
-  const handleDeleteClass = async (classId: string, className: string) => {
-    if (!confirm(`Are you sure you want to delete ${className}? This will unlink all students from this class.`)) {
-      return
-    }
-
-    const { error } = await supabase
-      .from('classes')
-      .delete()
-      .eq('id', classId)
-
-    if (error) {
-      toast.error('Failed to delete class', { description: error.message })
-    } else {
-      toast.success('Class deleted successfully!')
-      loadData()
+      console.log(`Successfully loaded ${studentsList.length} students`)
+      console.log('Student list:', studentsList)
+      
+      // Update the state with the new students
+      const newStudentsMap = new Map(students)
+      newStudentsMap.set(classId, studentsList)
+      setStudents(newStudentsMap)
+      
+      console.log('State updated, students map size:', newStudentsMap.size)
+    } catch (error) {
+      console.error('Error loading students:', error)
+      toast.error('Failed to load students: ' + (error as any).message)
     }
   }
 
-  // Filtered data
-  const filteredSchools = schools.filter(school => {
-    if (filterSchoolType !== 'all' && school.school_type !== filterSchoolType) return false
-    return true
-  })
+  const handleClassClick = (classId: string) => {
+    const isExpanding = expandedClass !== classId
+    console.log('Class clicked:', classId, 'isExpanding:', isExpanding)
+    console.log('Current students map:', students)
+    console.log('Has students for this class:', students.has(classId))
+    
+    setExpandedClass(isExpanding ? classId : null)
+    
+    if (isExpanding) {
+      console.log('Loading students for class:', classId)
+      loadStudentsForClass(classId)
+    }
+  }
 
   const filteredClasses = classes.filter(cls => {
-    if (filterSchool !== 'all' && cls.school_id !== filterSchool) return false
-    if (filterGrade !== 'all' && cls.grade_level !== filterGrade) return false
-    if (filterSection !== 'all' && cls.section !== filterSection) return false
-    if (searchQuery && !cls.grade_level.toLowerCase().includes(searchQuery.toLowerCase()) && 
-        !cls.section.toLowerCase().includes(searchQuery.toLowerCase())) return false
-    return true
+    if (!searchQuery) return true
+    const query = searchQuery.toLowerCase()
+    return (
+      cls.grade_level.toLowerCase().includes(query) ||
+      cls.section.toLowerCase().includes(query) ||
+      cls.subjects.some(s => s.toLowerCase().includes(query))
+    )
   })
-
-  // Get unique values for cascading filters
-  const availableGrades = [...new Set(filteredClasses.map(c => c.grade_level))]
-  const availableSections = [...new Set(filteredClasses.map(c => c.section))]
 
   if (authLoading || loading) {
     return (
-      <DashboardLayout title="Classes Management">
+      <DashboardLayout title="My Classes & Students">
         <div>Loading...</div>
       </DashboardLayout>
     )
   }
 
+  if (profile?.role !== 'teacher') {
+    return (
+      <DashboardLayout title="My Classes & Students">
+        <div>Access Denied. This page is for teachers only.</div>
+      </DashboardLayout>
+    )
+  }
+
   return (
-    <DashboardLayout title="Classes Management">
+    <DashboardLayout title="My Classes & Students">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <p className="text-gray-600">Manage classes across all schools</p>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="w-4 h-4 mr-2" />
-                Create Class
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Class</DialogTitle>
-                <DialogDescription>Add a new class to a school</DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleCreateClass} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>School *</Label>
-                  <Select value={selectedSchoolId} onValueChange={setSelectedSchoolId} required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select school" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {schools.map((school) => (
-                        <SelectItem key={school.id} value={school.id}>
-                          {school.name} ({school.school_code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Grade Level *</Label>
-                  <Select value={gradeLevel} onValueChange={setGradeLevel} required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select grade level" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {gradeLevels.map((grade) => (
-                        <SelectItem key={grade} value={grade}>
-                          {grade}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Section *</Label>
-                  <Input
-                    placeholder="e.g., A, B, Science, Arts"
-                    value={section}
-                    onChange={(e) => setSection(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Academic Year *</Label>
-                  <Input
-                    placeholder="e.g., 2025"
-                    value={academicYear}
-                    onChange={(e) => setAcademicYear(e.target.value)}
-                    required
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={submitting}>
-                  {submitting ? 'Creating...' : 'Create Class'}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+        <div>
+          <p className="text-gray-600">View your assigned classes and students</p>
         </div>
 
-        {/* Filters */}
+        {/* Search */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Filters</CardTitle>
+            <CardTitle className="text-lg">Search</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
-                <Label>School Type</Label>
-                <Select value={filterSchoolType} onValueChange={setFilterSchoolType}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="Primary">Primary</SelectItem>
-                    <SelectItem value="Secondary">Secondary</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>School</Label>
-                <Select value={filterSchool} onValueChange={setFilterSchool}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Schools</SelectItem>
-                    {filteredSchools.map((school) => (
-                      <SelectItem key={school.id} value={school.id}>
-                        {school.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Grade Level</Label>
-                <Select value={filterGrade} onValueChange={setFilterGrade}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Grades</SelectItem>
-                    {availableGrades.map((grade) => (
-                      <SelectItem key={grade} value={grade}>
-                        {grade}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Section</Label>
-                <Select value={filterSection} onValueChange={setFilterSection}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Sections</SelectItem>
-                    {availableSections.map((sec) => (
-                      <SelectItem key={sec} value={sec}>
-                        {sec}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Search</Label>
-                <Input
-                  placeholder="Search classes..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
+            <div className="max-w-md">
+              <Label>Search Classes</Label>
+              <Input
+                placeholder="Search by grade, section, or subject..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
           </CardContent>
         </Card>
@@ -376,21 +254,13 @@ export default function ClassesPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
             <CardHeader>
-              <CardTitle className="text-sm font-medium opacity-90">Total Schools</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-4xl font-bold">{filteredSchools.length}</div>
-            </CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
-            <CardHeader>
               <CardTitle className="text-sm font-medium opacity-90">Total Classes</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-4xl font-bold">{filteredClasses.length}</div>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
             <CardHeader>
               <CardTitle className="text-sm font-medium opacity-90">Total Students</CardTitle>
             </CardHeader>
@@ -400,154 +270,184 @@ export default function ClassesPage() {
               </div>
             </CardContent>
           </Card>
+          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium opacity-90">Subjects Teaching</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">
+                {new Set(filteredClasses.flatMap(c => c.subjects)).size}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* School Cards Grouped by Type */}
-        <div className="space-y-6">
-          {['Primary', 'Secondary'].map((schoolType) => {
-            const schoolsOfType = filteredSchools.filter(s => s.school_type === schoolType)
-            if (schoolsOfType.length === 0) return null
+        {/* Classes List */}
+        {filteredClasses.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-gray-500">
+              {searchQuery ? 'No classes match your search' : 'No classes assigned yet'}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {filteredClasses.map((cls) => {
+              const isExpanded = expandedClass === cls.id
+              const classStudents = students.get(cls.id) || []
 
-            return (
-              <div key={schoolType}>
-                <h2 className="text-2xl font-bold mb-4 flex items-center">
-                  <GraduationCap className="mr-2" />
-                  {schoolType} Schools
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {schoolsOfType.map((school) => {
-                    const schoolClasses = filteredClasses.filter(c => c.school_id === school.id)
-                    const isExpanded = expandedSchool === school.id
+              return (
+                <Card 
+                  key={cls.id}
+                  className="cursor-pointer hover:shadow-lg transition-all"
+                  onClick={() => handleClassClick(cls.id)}
+                >
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
+                          <GraduationCap className="h-6 w-6 text-blue-600" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-xl">
+                            {cls.grade_level} {cls.section}
+                          </CardTitle>
+                          <p className="text-sm text-gray-500">
+                            Academic Year: {cls.academic_year}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <Users className="w-4 h-4" />
+                            <span className="text-sm font-medium">{cls.student_count} Students</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-2 justify-end">
+                            {cls.subjects.map((subject, idx) => (
+                              <Badge key={idx} variant="outline" className="text-xs">
+                                {subject}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                        {isExpanded ? (
+                          <ChevronUp className="w-5 h-5 text-gray-400" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-gray-400" />
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
 
-                    return (
-                      <div key={school.id} className="space-y-2">
-                        <Card 
-                          className="cursor-pointer hover:shadow-lg transition-all"
-                          onClick={() => setExpandedSchool(isExpanded ? null : school.id)}
-                        >
-                          <CardHeader className="pb-3">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <CardTitle className="text-lg">{school.name}</CardTitle>
-                                <p className="text-sm text-gray-500">{school.school_code}</p>
-                              </div>
-                              {isExpanded ? <ChevronUp /> : <ChevronDown />}
-                            </div>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center text-gray-600">
-                                <School className="w-4 h-4 mr-2" />
-                                <span className="text-sm">{schoolClasses.length} Classes</span>
-                              </div>
-                              <div className="flex items-center text-gray-600">
-                                <Users className="w-4 h-4 mr-2" />
-                                <span className="text-sm">
-                                  {schoolClasses.reduce((sum, c) => sum + c.student_count, 0)} Students
-                                </span>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-
-                        {/* Expanded Classes */}
-                        {isExpanded && schoolClasses.length > 0 && (
-                          <div className="ml-4 space-y-2 animate-in slide-in-from-top">
-                            {schoolClasses.map((cls) => {
-                              const isClassExpanded = expandedClass === cls.id
+                  {/* Expanded Students List */}
+                  {isExpanded && (
+                    <CardContent className="border-t pt-4 animate-in slide-in-from-top">
+                      {(() => {
+                        console.log('Rendering expanded content for class:', cls.id)
+                        console.log('Students from map:', classStudents)
+                        console.log('Students length:', classStudents.length)
+                        return null
+                      })()}
+                      
+                      {classStudents.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                          <p className="font-semibold">No students enrolled in this class</p>
+                          <p className="text-sm mt-2">Class ID: {cls.id}</p>
+                          <p className="text-sm">Check console for debugging info</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="font-semibold text-gray-700">
+                              Students ({classStudents.length})
+                            </h4>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {classStudents.map((student) => {
+                              const isStudentExpanded = expandedStudent === student.id
 
                               return (
-                                <Card 
-                                  key={cls.id}
+                                <Card
+                                  key={student.id}
                                   className="cursor-pointer hover:shadow-md transition-all"
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    setExpandedClass(isClassExpanded ? null : cls.id)
+                                    setExpandedStudent(isStudentExpanded ? null : student.id)
                                   }}
                                 >
-                                  <CardHeader className="py-3">
-                                    <div className="flex justify-between items-center">
-                                      <div>
-                                        <CardTitle className="text-base">
-                                          {cls.grade_level} {cls.section}
-                                        </CardTitle>
-                                        <p className="text-xs text-gray-500">Academic Year: {cls.academic_year}</p>
+                                  <CardContent className="p-4">
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <UserCircle className="w-10 h-10 text-gray-400" />
+                                        <div>
+                                          <p className="font-semibold">{student.full_name}</p>
+                                          <p className="text-xs text-gray-500">
+                                            Roll: {student.roll_number}
+                                          </p>
+                                        </div>
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                        <Badge>{cls.student_count} students</Badge>
-                                        {isClassExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                                      </div>
+                                      {isStudentExpanded ? (
+                                        <ChevronUp className="w-4 h-4 text-gray-400" />
+                                      ) : (
+                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                      )}
                                     </div>
-                                  </CardHeader>
 
-                                  {/* Expanded Class Details */}
-                                  {isClassExpanded && (
-                                    <CardContent className="space-y-3 border-t pt-3">
-                                      <div className="grid grid-cols-2 gap-2 text-sm">
-                                        <div>
-                                          <span className="text-gray-500">Grade:</span>
-                                          <p className="font-medium">{cls.grade_level}</p>
-                                        </div>
-                                        <div>
-                                          <span className="text-gray-500">Section:</span>
-                                          <p className="font-medium">{cls.section}</p>
-                                        </div>
-                                        <div>
-                                          <span className="text-gray-500">Year:</span>
-                                          <p className="font-medium">{cls.academic_year}</p>
-                                        </div>
-                                        <div>
-                                          <span className="text-gray-500">Students:</span>
-                                          <p className="font-medium">{cls.student_count}</p>
+                                    {/* Expanded Student Details */}
+                                    {isStudentExpanded && (
+                                      <div className="mt-4 pt-4 border-t space-y-3">
+                                        <div className="grid grid-cols-2 gap-3 text-sm">
+                                          <div>
+                                            <div className="flex items-center gap-1 text-gray-500 mb-1">
+                                              <Mail className="w-3 h-3" />
+                                              <span className="text-xs">Email</span>
+                                            </div>
+                                            <p className="font-medium text-xs">{student.email}</p>
+                                          </div>
+                                          <div>
+                                            <div className="flex items-center gap-1 text-gray-500 mb-1">
+                                              <UserCircle className="w-3 h-3" />
+                                              <span className="text-xs">Username</span>
+                                            </div>
+                                            <p className="font-medium text-xs">{student.username}</p>
+                                          </div>
+                                          <div>
+                                            <div className="flex items-center gap-1 text-gray-500 mb-1">
+                                              <Calendar className="w-3 h-3" />
+                                              <span className="text-xs">Admission</span>
+                                            </div>
+                                            <p className="font-medium text-xs">{student.admission_date}</p>
+                                          </div>
+                                          <div>
+                                            <div className="flex items-center gap-1 text-gray-500 mb-1">
+                                              <Users className="w-3 h-3" />
+                                              <span className="text-xs">Parent</span>
+                                            </div>
+                                            <p className="font-medium text-xs">
+                                              {student.parent_name ? (
+                                                <span className="text-green-600">{student.parent_name}</span>
+                                              ) : (
+                                                <span className="text-gray-400">Not linked</span>
+                                              )}
+                                            </p>
+                                          </div>
                                         </div>
                                       </div>
-                                      <div className="flex gap-2 pt-2">
-                                        <Button 
-                                          size="sm" 
-                                          variant="outline"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            toast.info('Edit functionality coming soon')
-                                          }}
-                                        >
-                                          <Edit className="w-3 h-3 mr-1" />
-                                          Edit
-                                        </Button>
-                                        <Button 
-                                          size="sm" 
-                                          variant="destructive"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            handleDeleteClass(cls.id, `${cls.grade_level} ${cls.section}`)
-                                          }}
-                                        >
-                                          <Trash2 className="w-3 h-3 mr-1" />
-                                          Delete
-                                        </Button>
-                                      </div>
-                                    </CardContent>
-                                  )}
+                                    )}
+                                  </CardContent>
                                 </Card>
                               )
                             })}
                           </div>
-                        )}
-
-                        {isExpanded && schoolClasses.length === 0 && (
-                          <Card className="ml-4">
-                            <CardContent className="py-6 text-center text-gray-500">
-                              No classes found for this school
-                            </CardContent>
-                          </Card>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })}
-        </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  )}
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </div>
     </DashboardLayout>
   )

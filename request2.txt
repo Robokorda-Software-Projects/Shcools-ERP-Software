@@ -1,0 +1,1755 @@
+dashboard/classes/page.tsx:
+
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/AuthContext'
+import DashboardLayout from '@/components/dashboard/DashboardLayout'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
+import { Plus, School, Users, GraduationCap, ChevronDown, ChevronUp, Edit, Trash2 } from 'lucide-react'
+
+interface School {
+  id: string
+  name: string
+  school_code: string
+  school_type: string
+  class_count: number
+}
+
+interface Class {
+  id: string
+  grade_level: string
+  section: string
+  academic_year: string
+  school_id: string
+  school_name: string
+  student_count: number
+  expanded: boolean
+}
+
+export default function ClassesPage() {
+  const { user, profile, loading: authLoading } = useAuth()
+  const router = useRouter()
+  const [schools, setSchools] = useState<School[]>([])
+  const [classes, setClasses] = useState<Class[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedSchool, setExpandedSchool] = useState<string | null>(null)
+  const [expandedClass, setExpandedClass] = useState<string | null>(null)
+  
+  // Filters
+  const [filterSchoolType, setFilterSchoolType] = useState<string>('all')
+  const [filterSchool, setFilterSchool] = useState<string>('all')
+  const [filterGrade, setFilterGrade] = useState<string>('all')
+  const [filterSection, setFilterSection] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Create dialog
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [selectedSchoolId, setSelectedSchoolId] = useState('')
+  const [gradeLevel, setGradeLevel] = useState('')
+  const [section, setSection] = useState('')
+  const [academicYear, setAcademicYear] = useState('2025')
+  const [submitting, setSubmitting] = useState(false)
+
+  const gradeLevels = [
+    'ECD A', 'ECD B', 'ECD C',
+    'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7',
+    'Form 1', 'Form 2', 'Form 3', 'Form 4',
+    'Lower 6', 'Upper 6'
+  ]
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login')
+    }
+  }, [user, authLoading, router])
+
+  useEffect(() => {
+    if (profile) {
+      loadData()
+    }
+  }, [profile])
+
+  const loadData = async () => {
+    setLoading(true)
+
+    // Load schools
+    const { data: schoolsData, error: schoolsError } = await supabase
+      .from('schools')
+      .select('id, name, school_code, school_type')
+      .order('school_type', { ascending: true })
+      .order('name', { ascending: true })
+
+    if (schoolsError) {
+      toast.error('Failed to load schools')
+      console.error(schoolsError)
+    } else {
+      // Count classes per school
+      const schoolsWithCount = await Promise.all(
+        (schoolsData || []).map(async (school) => {
+          const { count } = await supabase
+            .from('classes')
+            .select('*', { count: 'exact', head: true })
+            .eq('school_id', school.id)
+          return { ...school, class_count: count || 0 }
+        })
+      )
+      setSchools(schoolsWithCount)
+    }
+
+    // Load classes with student counts
+    const { data: classesData, error: classesError } = await supabase
+      .from('classes')
+      .select(`
+        id,
+        grade_level,
+        section,
+        academic_year,
+        school_id,
+        schools(name)
+      `)
+      .order('grade_level', { ascending: true })
+      .order('section', { ascending: true })
+
+    if (classesError) {
+      toast.error('Failed to load classes')
+      console.error(classesError)
+    } else {
+      const classesWithCount = await Promise.all(
+        (classesData || []).map(async (cls: any) => {
+          const { count } = await supabase
+            .from('students')
+            .select('*', { count: 'exact', head: true })
+            .eq('class_id', cls.id)
+          return {
+            id: cls.id,
+            grade_level: cls.grade_level,
+            section: cls.section,
+            academic_year: cls.academic_year,
+            school_id: cls.school_id,
+            school_name: cls.schools?.name || 'Unknown',
+            student_count: count || 0,
+            expanded: false
+          }
+        })
+      )
+      setClasses(classesWithCount)
+    }
+
+    setLoading(false)
+  }
+
+  const handleCreateClass = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitting(true)
+
+    const { error } = await supabase
+      .from('classes')
+      .insert({
+        school_id: selectedSchoolId,
+        grade_level: gradeLevel,
+        section: section,
+        academic_year: academicYear
+      })
+
+    if (error) {
+      toast.error('Failed to create class', { description: error.message })
+    } else {
+      toast.success('Class created successfully!')
+      setDialogOpen(false)
+      setSelectedSchoolId('')
+      setGradeLevel('')
+      setSection('')
+      loadData()
+    }
+    setSubmitting(false)
+  }
+
+  const handleDeleteClass = async (classId: string, className: string) => {
+    if (!confirm(`Are you sure you want to delete ${className}? This will unlink all students from this class.`)) {
+      return
+    }
+
+    const { error } = await supabase
+      .from('classes')
+      .delete()
+      .eq('id', classId)
+
+    if (error) {
+      toast.error('Failed to delete class', { description: error.message })
+    } else {
+      toast.success('Class deleted successfully!')
+      loadData()
+    }
+  }
+
+  // Filtered data
+  const filteredSchools = schools.filter(school => {
+    if (filterSchoolType !== 'all' && school.school_type !== filterSchoolType) return false
+    return true
+  })
+
+  const filteredClasses = classes.filter(cls => {
+    if (filterSchool !== 'all' && cls.school_id !== filterSchool) return false
+    if (filterGrade !== 'all' && cls.grade_level !== filterGrade) return false
+    if (filterSection !== 'all' && cls.section !== filterSection) return false
+    if (searchQuery && !cls.grade_level.toLowerCase().includes(searchQuery.toLowerCase()) && 
+        !cls.section.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    return true
+  })
+
+  // Get unique values for cascading filters
+  const availableGrades = [...new Set(filteredClasses.map(c => c.grade_level))]
+  const availableSections = [...new Set(filteredClasses.map(c => c.section))]
+
+  if (authLoading || loading) {
+    return (
+      <DashboardLayout title="Classes Management">
+        <div>Loading...</div>
+      </DashboardLayout>
+    )
+  }
+
+  return (
+    <DashboardLayout title="Classes Management">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <p className="text-gray-600">Manage classes across all schools</p>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="w-4 h-4 mr-2" />
+                Create Class
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create New Class</DialogTitle>
+                <DialogDescription>Add a new class to a school</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCreateClass} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>School *</Label>
+                  <Select value={selectedSchoolId} onValueChange={setSelectedSchoolId} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select school" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {schools.map((school) => (
+                        <SelectItem key={school.id} value={school.id}>
+                          {school.name} ({school.school_code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Grade Level *</Label>
+                  <Select value={gradeLevel} onValueChange={setGradeLevel} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select grade level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {gradeLevels.map((grade) => (
+                        <SelectItem key={grade} value={grade}>
+                          {grade}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Section *</Label>
+                  <Input
+                    placeholder="e.g., A, B, Science, Arts"
+                    value={section}
+                    onChange={(e) => setSection(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Academic Year *</Label>
+                  <Input
+                    placeholder="e.g., 2025"
+                    value={academicYear}
+                    onChange={(e) => setAcademicYear(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? 'Creating...' : 'Create Class'}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {/* Filters */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Filters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div>
+                <Label>School Type</Label>
+                <Select value={filterSchoolType} onValueChange={setFilterSchoolType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="Primary">Primary</SelectItem>
+                    <SelectItem value="Secondary">Secondary</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>School</Label>
+                <Select value={filterSchool} onValueChange={setFilterSchool}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Schools</SelectItem>
+                    {filteredSchools.map((school) => (
+                      <SelectItem key={school.id} value={school.id}>
+                        {school.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Grade Level</Label>
+                <Select value={filterGrade} onValueChange={setFilterGrade}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Grades</SelectItem>
+                    {availableGrades.map((grade) => (
+                      <SelectItem key={grade} value={grade}>
+                        {grade}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Section</Label>
+                <Select value={filterSection} onValueChange={setFilterSection}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sections</SelectItem>
+                    {availableSections.map((sec) => (
+                      <SelectItem key={sec} value={sec}>
+                        {sec}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Search</Label>
+                <Input
+                  placeholder="Search classes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Summary Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium opacity-90">Total Schools</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">{filteredSchools.length}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium opacity-90">Total Classes</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">{filteredClasses.length}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium opacity-90">Total Students</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">
+                {filteredClasses.reduce((sum, cls) => sum + cls.student_count, 0)}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* School Cards Grouped by Type */}
+        <div className="space-y-6">
+          {['Primary', 'Secondary'].map((schoolType) => {
+            const schoolsOfType = filteredSchools.filter(s => s.school_type === schoolType)
+            if (schoolsOfType.length === 0) return null
+
+            return (
+              <div key={schoolType}>
+                <h2 className="text-2xl font-bold mb-4 flex items-center">
+                  <GraduationCap className="mr-2" />
+                  {schoolType} Schools
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {schoolsOfType.map((school) => {
+                    const schoolClasses = filteredClasses.filter(c => c.school_id === school.id)
+                    const isExpanded = expandedSchool === school.id
+
+                    return (
+                      <div key={school.id} className="space-y-2">
+                        <Card 
+                          className="cursor-pointer hover:shadow-lg transition-all"
+                          onClick={() => setExpandedSchool(isExpanded ? null : school.id)}
+                        >
+                          <CardHeader className="pb-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <CardTitle className="text-lg">{school.name}</CardTitle>
+                                <p className="text-sm text-gray-500">{school.school_code}</p>
+                              </div>
+                              {isExpanded ? <ChevronUp /> : <ChevronDown />}
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center text-gray-600">
+                                <School className="w-4 h-4 mr-2" />
+                                <span className="text-sm">{schoolClasses.length} Classes</span>
+                              </div>
+                              <div className="flex items-center text-gray-600">
+                                <Users className="w-4 h-4 mr-2" />
+                                <span className="text-sm">
+                                  {schoolClasses.reduce((sum, c) => sum + c.student_count, 0)} Students
+                                </span>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Expanded Classes */}
+                        {isExpanded && schoolClasses.length > 0 && (
+                          <div className="ml-4 space-y-2 animate-in slide-in-from-top">
+                            {schoolClasses.map((cls) => {
+                              const isClassExpanded = expandedClass === cls.id
+
+                              return (
+                                <Card 
+                                  key={cls.id}
+                                  className="cursor-pointer hover:shadow-md transition-all"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setExpandedClass(isClassExpanded ? null : cls.id)
+                                  }}
+                                >
+                                  <CardHeader className="py-3">
+                                    <div className="flex justify-between items-center">
+                                      <div>
+                                        <CardTitle className="text-base">
+                                          {cls.grade_level} {cls.section}
+                                        </CardTitle>
+                                        <p className="text-xs text-gray-500">Academic Year: {cls.academic_year}</p>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge>{cls.student_count} students</Badge>
+                                        {isClassExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                      </div>
+                                    </div>
+                                  </CardHeader>
+
+                                  {/* Expanded Class Details */}
+                                  {isClassExpanded && (
+                                    <CardContent className="space-y-3 border-t pt-3">
+                                      <div className="grid grid-cols-2 gap-2 text-sm">
+                                        <div>
+                                          <span className="text-gray-500">Grade:</span>
+                                          <p className="font-medium">{cls.grade_level}</p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Section:</span>
+                                          <p className="font-medium">{cls.section}</p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Year:</span>
+                                          <p className="font-medium">{cls.academic_year}</p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Students:</span>
+                                          <p className="font-medium">{cls.student_count}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-2 pt-2">
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            toast.info('Edit functionality coming soon')
+                                          }}
+                                        >
+                                          <Edit className="w-3 h-3 mr-1" />
+                                          Edit
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
+                                          variant="destructive"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleDeleteClass(cls.id, `${cls.grade_level} ${cls.section}`)
+                                          }}
+                                        >
+                                          <Trash2 className="w-3 h-3 mr-1" />
+                                          Delete
+                                        </Button>
+                                      </div>
+                                    </CardContent>
+                                  )}
+                                </Card>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                        {isExpanded && schoolClasses.length === 0 && (
+                          <Card className="ml-4">
+                            <CardContent className="py-6 text-center text-gray-500">
+                              No classes found for this school
+                            </CardContent>
+                          </Card>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </DashboardLayout>
+  )
+}
+
+dashboard/students/page.tsx:
+
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/AuthContext'
+import DashboardLayout from '@/components/dashboard/DashboardLayout'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
+import { Plus, School, Users, GraduationCap, ChevronDown, ChevronUp, Edit, Trash2, UserCircle, Link2, Calendar } from 'lucide-react'
+
+interface School {
+  id: string
+  name: string
+  school_code: string
+  school_type: string
+  student_count: number
+}
+
+interface Student {
+  id: string
+  user_id: string
+  username: string
+  full_name: string
+  email: string
+  class_id: string | null
+  grade_level: string
+  section: string
+  school_id: string
+  school_name: string
+  parent_id: string | null
+  parent_name: string | null
+  admission_date: string
+  expanded: boolean
+}
+
+export default function StudentsPage() {
+  const { user, profile, loading: authLoading } = useAuth()
+  const router = useRouter()
+  const [schools, setSchools] = useState<School[]>([])
+  const [students, setStudents] = useState<Student[]>([])
+  const [classes, setClasses] = useState<any[]>([])
+  const [parents, setParents] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedSchool, setExpandedSchool] = useState<string | null>(null)
+  const [expandedStudent, setExpandedStudent] = useState<string | null>(null)
+  
+  // Filters
+  const [filterSchoolType, setFilterSchoolType] = useState<string>('all')
+  const [filterSchool, setFilterSchool] = useState<string>('all')
+  const [filterGrade, setFilterGrade] = useState<string>('all')
+  const [filterSection, setFilterSection] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Create dialog
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [selectedClassId, setSelectedClassId] = useState('')
+  const [selectedSchoolId, setSelectedSchoolId] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login')
+    }
+  }, [user, authLoading, router])
+
+  useEffect(() => {
+    if (profile) {
+      loadData()
+    }
+  }, [profile])
+
+  const loadData = async () => {
+    setLoading(true)
+
+    // Load schools
+    let schoolsQuery = supabase
+      .from('schools')
+      .select('id, name, school_code, school_type')
+      .order('school_type')
+      .order('name')
+
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      schoolsQuery = schoolsQuery.eq('id', profile.school_id)
+    }
+
+    const { data: schoolsData, error: schoolsError } = await schoolsQuery
+
+    if (schoolsError) {
+      toast.error('Failed to load schools')
+      console.error(schoolsError)
+    } else {
+      const schoolsWithCount = await Promise.all(
+        (schoolsData || []).map(async (school) => {
+          const { count } = await supabase
+            .from('students')
+            .select('*', { count: 'exact', head: true })
+            .eq('school_id', school.id) // Using school_id from classes join
+          return { ...school, student_count: count || 0 }
+        })
+      )
+      setSchools(schoolsWithCount)
+    }
+
+    // Load classes
+    let classesQuery = supabase
+      .from('classes')
+      .select('id, grade_level, section, school_id, schools(name)')
+      .order('grade_level')
+
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      classesQuery = classesQuery.eq('school_id', profile.school_id)
+    }
+
+    const { data: classesData } = await classesQuery
+    setClasses(classesData || [])
+
+    // Load parents
+    const { data: parentsData } = await supabase
+      .from('profiles')
+      .select('id, full_name, username')
+      .eq('role', 'parent')
+    setParents(parentsData || [])
+
+    // Load students with all details
+    let studentsQuery = supabase
+      .from('students')
+      .select(`
+        id,
+        user_id,
+        class_id,
+        parent_id,
+        admission_date,
+        profiles!students_user_id_fkey(username, full_name, email),
+        parent:profiles!students_parent_id_fkey(full_name),
+        classes(grade_level, section, school_id, schools(name, school_code, school_type))
+      `)
+
+    const { data: studentsData, error: studentsError } = await studentsQuery
+
+    if (studentsError) {
+      toast.error('Failed to load students')
+      console.error(studentsError)
+    } else {
+      const transformed = (studentsData || []).map((s: any) => ({
+        id: s.id,
+        user_id: s.user_id,
+        username: s.profiles?.username || 'Unknown',
+        full_name: s.profiles?.full_name || 'Unknown',
+        email: s.profiles?.email || 'N/A',
+        class_id: s.class_id,
+        grade_level: s.classes?.grade_level || 'Not Assigned',
+        section: s.classes?.section || '',
+        school_id: s.classes?.school_id || '',
+        school_name: s.classes?.schools?.name || 'Not Assigned',
+        parent_id: s.parent_id,
+        parent_name: s.parent?.full_name || null,
+        admission_date: s.admission_date,
+        expanded: false
+      }))
+      setStudents(transformed)
+    }
+
+    setLoading(false)
+  }
+
+  const generateStudentUsername = (schoolCode: string) => {
+    const randomNum = Math.floor(10000000 + Math.random() * 90000000)
+    return `${schoolCode}-ST-${randomNum}`
+  }
+
+  const handleCreateStudent = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitting(true)
+
+    try {
+      // Get school code
+      const school = schools.find(s => s.id === selectedSchoolId)
+      if (!school) throw new Error('School not found')
+
+      const username = generateStudentUsername(school.school_code)
+
+      // Create auth user
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: email,
+        password: password,
+        email_confirm: true,
+        user_metadata: { full_name: fullName }
+      })
+
+      if (authError) throw authError
+
+      // Create profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: authData.user.id,
+          email: email,
+          username: username,
+          full_name: fullName,
+          role: 'student',
+          school_id: selectedSchoolId
+        })
+
+      if (profileError) throw profileError
+
+      // Create student record
+      const { error: studentError } = await supabase
+        .from('students')
+        .insert({
+          user_id: authData.user.id,
+          class_id: selectedClassId || null,
+          admission_date: new Date().toISOString().split('T')[0]
+        })
+
+      if (studentError) throw studentError
+
+      toast.success('Student created successfully!', { description: `Username: ${username}` })
+      setDialogOpen(false)
+      setFullName('')
+      setEmail('')
+      setPassword('')
+      setSelectedClassId('')
+      setSelectedSchoolId('')
+      loadData()
+    } catch (error: any) {
+      toast.error('Failed to create student', { description: error.message })
+    }
+    setSubmitting(false)
+  }
+
+  const handleDeleteStudent = async (studentId: string, studentName: string) => {
+    if (!confirm(`Are you sure you want to delete ${studentName}? This will remove all associated data.`)) {
+      return
+    }
+
+    const { error } = await supabase
+      .from('students')
+      .delete()
+      .eq('id', studentId)
+
+    if (error) {
+      toast.error('Failed to delete student', { description: error.message })
+    } else {
+      toast.success('Student deleted successfully!')
+      loadData()
+    }
+  }
+
+  // Filtered data
+  const filteredSchools = schools.filter(school => {
+    if (filterSchoolType !== 'all' && school.school_type !== filterSchoolType) return false
+    if (filterSchool !== 'all' && school.id !== filterSchool) return false
+    return true
+  })
+
+  const filteredStudents = students.filter(student => {
+    if (filterSchool !== 'all' && student.school_id !== filterSchool) return false
+    if (filterGrade !== 'all' && student.grade_level !== filterGrade) return false
+    if (filterSection !== 'all' && student.section !== filterSection) return false
+    if (searchQuery && !student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) && 
+        !student.username.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    return true
+  })
+
+  const availableGrades = [...new Set(filteredStudents.map(s => s.grade_level))]
+  const availableSections = [...new Set(filteredStudents.map(s => s.section).filter(Boolean))]
+
+  if (authLoading || loading) {
+    return (
+      <DashboardLayout title="Students Management">
+        <div>Loading...</div>
+      </DashboardLayout>
+    )
+  }
+
+  return (
+    <DashboardLayout title="Students Management">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <p className="text-gray-600">Manage students across all schools</p>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="w-4 h-4 mr-2" />
+                Create Student
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create New Student</DialogTitle>
+                <DialogDescription>Add a new student to the system</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCreateStudent} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Full Name *</Label>
+                  <Input
+                    placeholder="e.g., Tanaka Moyo"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email *</Label>
+                  <Input
+                    type="email"
+                    placeholder="student@school.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Password *</Label>
+                  <Input
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                  <p className="text-xs text-gray-500">Default: Student123! (can be changed later)</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>School *</Label>
+                  <Select value={selectedSchoolId} onValueChange={setSelectedSchoolId} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select school" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {schools.map((school) => (
+                        <SelectItem key={school.id} value={school.id}>
+                          {school.name} ({school.school_code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Class *</Label>
+                  <Select value={selectedClassId} onValueChange={setSelectedClassId} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {classes
+                        .filter(c => c.school_id === selectedSchoolId)
+                        .map((cls: any) => (
+                          <SelectItem key={cls.id} value={cls.id}>
+                            {cls.grade_level} {cls.section}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                  <p className="text-sm text-blue-800">
+                    <strong>Student ID:</strong> Will be auto-generated as{' '}
+                    {selectedSchoolId 
+                      ? `${schools.find(s => s.id === selectedSchoolId)?.school_code}-ST-########`
+                      : 'SCHOOL-ST-########'}
+                  </p>
+                </div>
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? 'Enrolling Student...' : 'Enroll Student'}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {/* Filters */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Filters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div>
+                <Label>School Type</Label>
+                <Select value={filterSchoolType} onValueChange={setFilterSchoolType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="Primary">Primary</SelectItem>
+                    <SelectItem value="Secondary">Secondary</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>School</Label>
+                <Select value={filterSchool} onValueChange={setFilterSchool}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Schools</SelectItem>
+                    {filteredSchools.map((school) => (
+                      <SelectItem key={school.id} value={school.id}>
+                        {school.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Grade Level</Label>
+                <Select value={filterGrade} onValueChange={setFilterGrade}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Grades</SelectItem>
+                    {availableGrades.map((grade) => (
+                      <SelectItem key={grade} value={grade}>
+                        {grade}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Section</Label>
+                <Select value={filterSection} onValueChange={setFilterSection}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sections</SelectItem>
+                    {availableSections.map((sec) => (
+                      <SelectItem key={sec} value={sec}>
+                        {sec}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Search</Label>
+                <Input
+                  placeholder="Name or username..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Summary Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium opacity-90">Total Schools</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">{filteredSchools.length}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium opacity-90">Total Students</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">{filteredStudents.length}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium opacity-90">With Parents Linked</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">
+                {filteredStudents.filter(s => s.parent_id).length}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* School Cards */}
+        <div className="space-y-6">
+          {['Primary', 'Secondary'].map((schoolType) => {
+            const schoolsOfType = filteredSchools.filter(s => s.school_type === schoolType)
+            if (schoolsOfType.length === 0) return null
+
+            return (
+              <div key={schoolType}>
+                <h2 className="text-2xl font-bold mb-4 flex items-center">
+                  <GraduationCap className="mr-2" />
+                  {schoolType} Schools
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {schoolsOfType.map((school) => {
+                    const schoolStudents = filteredStudents.filter(s => s.school_id === school.id)
+                    const isExpanded = expandedSchool === school.id
+
+                    return (
+                      <div key={school.id} className="space-y-2">
+                        <Card 
+                          className="cursor-pointer hover:shadow-lg transition-all"
+                          onClick={() => setExpandedSchool(isExpanded ? null : school.id)}
+                        >
+                          <CardHeader className="pb-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <CardTitle className="text-lg">{school.name}</CardTitle>
+                                <p className="text-sm text-gray-500">{school.school_code}</p>
+                              </div>
+                              {isExpanded ? <ChevronUp /> : <ChevronDown />}
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center text-gray-600">
+                                <Users className="w-4 h-4 mr-2" />
+                                <span className="text-sm">{schoolStudents.length} Students</span>
+                              </div>
+                              <Badge variant="outline">{school.school_type}</Badge>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Expanded Students */}
+                        {isExpanded && schoolStudents.length > 0 && (
+                          <div className="ml-4 space-y-2 animate-in slide-in-from-top">
+                            {schoolStudents.map((student) => {
+                              const isStudentExpanded = expandedStudent === student.id
+
+                              return (
+                                <Card 
+                                  key={student.id}
+                                  className="cursor-pointer hover:shadow-md transition-all"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setExpandedStudent(isStudentExpanded ? null : student.id)
+                                  }}
+                                >
+                                  <CardHeader className="py-3">
+                                    <div className="flex justify-between items-center">
+                                      <div className="flex items-center gap-3">
+                                        <UserCircle className="w-8 h-8 text-gray-400" />
+                                        <div>
+                                          <CardTitle className="text-base">{student.full_name}</CardTitle>
+                                          <p className="text-xs text-gray-500">{student.username}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge>{student.grade_level} {student.section}</Badge>
+                                        {isStudentExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                      </div>
+                                    </div>
+                                  </CardHeader>
+
+                                  {/* Expanded Student Details */}
+                                  {isStudentExpanded && (
+                                    <CardContent className="space-y-3 border-t pt-3">
+                                      <div className="grid grid-cols-2 gap-3 text-sm">
+                                        <div>
+                                          <span className="text-gray-500">Email:</span>
+                                          <p className="font-medium">{student.email}</p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Class:</span>
+                                          <p className="font-medium">{student.grade_level} {student.section}</p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Parent:</span>
+                                          <p className="font-medium">
+                                            {student.parent_name ? (
+                                              <span className="text-green-600">{student.parent_name}</span>
+                                            ) : (
+                                              <span className="text-yellow-600">Not Linked</span>
+                                            )}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500 flex items-center">
+                                            <Calendar className="w-3 h-3 mr-1" />
+                                            Admission:
+                                          </span>
+                                          <p className="font-medium">{student.admission_date}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-2 pt-2">
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            toast.info('Edit functionality coming in next phase')
+                                          }}
+                                        >
+                                          <Edit className="w-3 h-3 mr-1" />
+                                          Edit
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            router.push('/dashboard/parents')
+                                          }}
+                                        >
+                                          <Link2 className="w-3 h-3 mr-1" />
+                                          Link Parent
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
+                                          variant="destructive"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleDeleteStudent(student.id, student.full_name)
+                                          }}
+                                        >
+                                          <Trash2 className="w-3 h-3 mr-1" />
+                                          Delete
+                                        </Button>
+                                      </div>
+                                    </CardContent>
+                                  )}
+                                </Card>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                        {isExpanded && schoolStudents.length === 0 && (
+                          <Card className="ml-4">
+                            <CardContent className="py-6 text-center text-gray-500">
+                              No students found for this school
+                            </CardContent>
+                          </Card>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </DashboardLayout>
+  )
+}
+
+dashboard/exams/page.tsx:
+
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/AuthContext'
+import DashboardLayout from '@/components/dashboard/DashboardLayout'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
+import { Plus, School, FileText, Calendar, ChevronDown, ChevronUp, Edit, Trash2, CheckCircle, Clock, Save, GraduationCap } from 'lucide-react'
+
+interface School {
+  id: string
+  name: string
+  school_code: string
+  school_type: string
+  exam_count: number
+}
+
+interface Exam {
+  id: string
+  title: string
+  description: string
+  exam_date: string
+  total_marks: number
+  school_id: string
+  school_name: string
+  school_type: string
+  class_id: string
+  class_name: string
+  subject_id: string
+  subject_name: string
+  graded_count: number
+  total_students: number
+}
+
+interface StudentGrade {
+  student_id: string
+  student_name: string
+  username: string
+  marks_obtained: number | null
+  percentage: number | null
+  grade: string | null
+  result_id: string | null
+}
+
+export default function ExamsPage() {
+  const { user, profile, loading: authLoading } = useAuth()
+  const router = useRouter()
+  const [schools, setSchools] = useState<School[]>([])
+  const [exams, setExams] = useState<Exam[]>([])
+  const [classes, setClasses] = useState<any[]>([])
+  const [subjects, setSubjects] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedSchool, setExpandedSchool] = useState<string | null>(null)
+  const [expandedExam, setExpandedExam] = useState<string | null>(null)
+  const [studentGrades, setStudentGrades] = useState<StudentGrade[]>([])
+  const [savingGrades, setSavingGrades] = useState(false)
+  
+  const [filterSchoolType, setFilterSchoolType] = useState<string>('all')
+  const [filterSchool, setFilterSchool] = useState<string>('all')
+  const [filterClass, setFilterClass] = useState<string>('all')
+  const [filterSubject, setFilterSubject] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [examTitle, setExamTitle] = useState('')
+  const [examDescription, setExamDescription] = useState('')
+  const [examDate, setExamDate] = useState('')
+  const [totalMarks, setTotalMarks] = useState('')
+  const [selectedSchoolId, setSelectedSchoolId] = useState('')
+  const [selectedClassId, setSelectedClassId] = useState('')
+  const [selectedSubjectId, setSelectedSubjectId] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login')
+    }
+  }, [user, authLoading, router])
+
+  useEffect(() => {
+    if (profile) {
+      loadData()
+    }
+  }, [profile])
+
+  const loadData = async () => {
+    setLoading(true)
+
+    let schoolsQuery = supabase.from('schools').select('id, name, school_code, school_type').order('school_type').order('name')
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      schoolsQuery = schoolsQuery.eq('id', profile.school_id)
+    }
+
+    const { data: schoolsData } = await schoolsQuery
+    const schoolsWithCount = await Promise.all(
+      (schoolsData || []).map(async (school) => {
+        const { count } = await supabase.from('exams').select('*', { count: 'exact', head: true }).eq('school_id', school.id)
+        return { ...school, exam_count: count || 0 }
+      })
+    )
+    setSchools(schoolsWithCount)
+
+    let classesQuery = supabase.from('classes').select('id, grade_level, section, school_id').order('grade_level')
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      classesQuery = classesQuery.eq('school_id', profile.school_id)
+    }
+    const { data: classesData } = await classesQuery
+    setClasses(classesData || [])
+
+    let subjectsQuery = supabase.from('subjects').select('id, name, school_id').order('name')
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      subjectsQuery = subjectsQuery.eq('school_id', profile.school_id)
+    }
+    const { data: subjectsData } = await subjectsQuery
+    setSubjects(subjectsData || [])
+
+    let examsQuery = supabase.from('exams').select('id, title, description, exam_date, total_marks, school_id, class_id, subject_id, schools(name, school_type), classes(grade_level, section), subjects(name)').order('exam_date', { ascending: false })
+    if (profile?.role === 'school_admin' && profile?.school_id) {
+      examsQuery = examsQuery.eq('school_id', profile.school_id)
+    } else if (profile?.role === 'teacher') {
+      examsQuery = examsQuery.eq('created_by', profile.id)
+    }
+
+    const { data: examsData } = await examsQuery
+    const examsWithCounts = await Promise.all(
+      (examsData || []).map(async (exam: any) => {
+        const { count: totalCount } = await supabase.from('students').select('*', { count: 'exact', head: true }).eq('class_id', exam.class_id)
+        const { count: gradedCount } = await supabase.from('exam_results').select('*', { count: 'exact', head: true }).eq('exam_id', exam.id).not('marks_obtained', 'is', null)
+        return {
+          id: exam.id,
+          title: exam.title,
+          description: exam.description,
+          exam_date: exam.exam_date,
+          total_marks: exam.total_marks,
+          school_id: exam.school_id,
+          school_name: exam.schools?.name || 'Unknown',
+          school_type: exam.schools?.school_type || 'Unknown',
+          class_id: exam.class_id,
+          class_name: `${exam.classes?.grade_level || ''} ${exam.classes?.section || ''}`,
+          subject_id: exam.subject_id,
+          subject_name: exam.subjects?.name || 'Unknown',
+          graded_count: gradedCount || 0,
+          total_students: totalCount || 0
+        }
+      })
+    )
+    setExams(examsWithCounts)
+    setLoading(false)
+  }
+
+  const loadStudentGrades = async (examId: string, classId: string) => {
+    const { data: studentsData } = await supabase.from('students').select('id, profiles!students_user_id_fkey(username, full_name)').eq('class_id', classId)
+    const { data: resultsData } = await supabase.from('exam_results').select('*').eq('exam_id', examId)
+
+    const grades: StudentGrade[] = (studentsData || []).map((student: any) => {
+      const result = resultsData?.find(r => r.student_id === student.id)
+      return {
+        student_id: student.id,
+        student_name: student.profiles?.full_name || 'Unknown',
+        username: student.profiles?.username || 'Unknown',
+        marks_obtained: result?.marks_obtained || null,
+        percentage: result?.percentage || null,
+        grade: result?.grade || null,
+        result_id: result?.id || null
+      }
+    })
+    setStudentGrades(grades)
+  }
+
+  const handleMarksChange = (studentId: string, marks: string, totalMarks: number) => {
+    const marksNum = parseFloat(marks) || 0
+    const percentage = (marksNum / totalMarks) * 100
+    let grade = 'F'
+    if (percentage >= 90) grade = 'A'
+    else if (percentage >= 80) grade = 'B'
+    else if (percentage >= 70) grade = 'C'
+    else if (percentage >= 60) grade = 'D'
+    else if (percentage >= 50) grade = 'E'
+
+    setStudentGrades(prev => prev.map(sg => 
+      sg.student_id === studentId ? { ...sg, marks_obtained: marksNum, percentage, grade } : sg
+    ))
+  }
+
+  const handleSaveGrades = async (examId: string) => {
+    setSavingGrades(true)
+    try {
+      for (const sg of studentGrades) {
+        if (sg.marks_obtained === null) continue
+        const gradeData = {
+          exam_id: examId,
+          student_id: sg.student_id,
+          marks_obtained: sg.marks_obtained,
+          percentage: sg.percentage,
+          grade: sg.grade,
+          graded_by: profile?.id,
+          graded_at: new Date().toISOString()
+        }
+        if (sg.result_id) {
+          await supabase.from('exam_results').update(gradeData).eq('id', sg.result_id)
+        } else {
+          await supabase.from('exam_results').insert(gradeData)
+        }
+      }
+      toast.success('Grades saved successfully!')
+      loadData()
+    } catch (error: any) {
+      toast.error('Failed to save grades')
+    }
+    setSavingGrades(false)
+  }
+
+  const handleCreateExam = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitting(true)
+    const { error } = await supabase.from('exams').insert({
+      title: examTitle,
+      description: examDescription,
+      exam_date: examDate,
+      total_marks: parseInt(totalMarks),
+      school_id: selectedSchoolId,
+      class_id: selectedClassId,
+      subject_id: selectedSubjectId,
+      created_by: profile?.id
+    })
+    if (error) {
+      toast.error('Failed to create exam')
+    } else {
+      toast.success('Exam created successfully!')
+      setDialogOpen(false)
+      setExamTitle('')
+      setExamDescription('')
+      setExamDate('')
+      setTotalMarks('')
+      setSelectedSchoolId('')
+      setSelectedClassId('')
+      setSelectedSubjectId('')
+      loadData()
+    }
+    setSubmitting(false)
+  }
+
+  const handleDeleteExam = async (examId: string, examTitle: string) => {
+    if (!confirm(`Delete "${examTitle}"? All grades will be deleted.`)) return
+    const { error } = await supabase.from('exams').delete().eq('id', examId)
+    if (error) {
+      toast.error('Failed to delete exam')
+    } else {
+      toast.success('Exam deleted!')
+      loadData()
+    }
+  }
+
+  const filteredExams = exams.filter(exam => {
+    if (filterSchoolType !== 'all' && exam.school_type !== filterSchoolType) return false
+    if (filterSchool !== 'all' && exam.school_id !== filterSchool) return false
+    if (filterClass !== 'all' && exam.class_id !== filterClass) return false
+    if (filterSubject !== 'all' && exam.subject_id !== filterSubject) return false
+    if (searchQuery && !exam.title.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    return true
+  })
+
+  const filteredSchools = schools.filter(school => {
+    if (filterSchoolType !== 'all' && school.school_type !== filterSchoolType) return false
+    return filteredExams.some(exam => exam.school_id === school.id)
+  })
+
+  const availableClasses = [...new Set(filteredExams.map(e => e.class_id))]
+  const availableSubjects = [...new Set(filteredExams.map(e => e.subject_id))]
+
+  if (authLoading || loading) {
+    return <DashboardLayout title="Exams Management"><div>Loading...</div></DashboardLayout>
+  }
+
+  return (
+    <DashboardLayout title="Exams Management">
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <p className="text-gray-600">Manage exams and enter grades</p>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="w-4 h-4 mr-2" />Create Exam
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Create New Exam</DialogTitle><DialogDescription>Add a new exam for a class</DialogDescription></DialogHeader>
+              <form onSubmit={handleCreateExam} className="space-y-4">
+                <div><Label>Exam Title *</Label><Input placeholder="e.g., Mid-Term Mathematics" value={examTitle} onChange={(e) => setExamTitle(e.target.value)} required /></div>
+                <div><Label>Description</Label><Input placeholder="Brief description" value={examDescription} onChange={(e) => setExamDescription(e.target.value)} /></div>
+                <div><Label>Exam Date *</Label><Input type="date" value={examDate} onChange={(e) => setExamDate(e.target.value)} required /></div>
+                <div><Label>Total Marks *</Label><Input type="number" placeholder="e.g., 100" value={totalMarks} onChange={(e) => setTotalMarks(e.target.value)} required /></div>
+                <div><Label>School *</Label>
+                  <Select value={selectedSchoolId} onValueChange={setSelectedSchoolId} required>
+                    <SelectTrigger><SelectValue placeholder="Select school" /></SelectTrigger>
+                    <SelectContent>{schools.map((school) => <SelectItem key={school.id} value={school.id}>{school.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div><Label>Class *</Label>
+                  <Select value={selectedClassId} onValueChange={setSelectedClassId} required>
+                    <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
+                    <SelectContent>{classes.filter(c => c.school_id === selectedSchoolId).map((cls: any) => <SelectItem key={cls.id} value={cls.id}>{cls.grade_level} {cls.section}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div><Label>Subject *</Label>
+                  <Select value={selectedSubjectId} onValueChange={setSelectedSubjectId} required>
+                    <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
+                    <SelectContent>{subjects.filter(s => s.school_id === selectedSchoolId).map((subj: any) => <SelectItem key={subj.id} value={subj.id}>{subj.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <Button type="submit" className="w-full" disabled={submitting}>{submitting ? 'Creating...' : 'Create Exam'}</Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <Card>
+          <CardHeader><CardTitle className="text-lg">Filters</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div><Label>School Type</Label>
+                <Select value={filterSchoolType} onValueChange={setFilterSchoolType}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="Primary">Primary</SelectItem>
+                    <SelectItem value="Secondary">Secondary</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label>School</Label>
+                <Select value={filterSchool} onValueChange={setFilterSchool}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Schools</SelectItem>
+                    {filteredSchools.map((school) => <SelectItem key={school.id} value={school.id}>{school.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label>Class</Label>
+                <Select value={filterClass} onValueChange={setFilterClass}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Classes</SelectItem>
+                    {classes.filter(c => availableClasses.includes(c.id)).map((cls: any) => <SelectItem key={cls.id} value={cls.id}>{cls.grade_level} {cls.section}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label>Subject</Label>
+                <Select value={filterSubject} onValueChange={setFilterSubject}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Subjects</SelectItem>
+                    {subjects.filter(s => availableSubjects.includes(s.id)).map((subj: any) => <SelectItem key={subj.id} value={subj.id}>{subj.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label>Search</Label><Input placeholder="Exam title..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Total Exams</CardTitle></CardHeader>
+            <CardContent><div className="text-4xl font-bold">{filteredExams.length}</div></CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Fully Graded</CardTitle></CardHeader>
+            <CardContent><div className="text-4xl font-bold">{filteredExams.filter(e => e.graded_count === e.total_students && e.total_students > 0).length}</div></CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-yellow-500 to-yellow-600 text-white">
+            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Pending Grading</CardTitle></CardHeader>
+            <CardContent><div className="text-4xl font-bold">{filteredExams.filter(e => e.graded_count < e.total_students).length}</div></CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          {['Primary', 'Secondary'].map((schoolType) => {
+            const schoolsOfType = filteredSchools.filter(s => s.school_type === schoolType)
+            if (schoolsOfType.length === 0) return null
+
+            return (
+              <div key={schoolType}>
+                <h2 className="text-2xl font-bold mb-4 flex items-center"><GraduationCap className="mr-2" />{schoolType} Schools</h2>
+                <div className="space-y-4">
+                  {schoolsOfType.map((school) => {
+                    const schoolExams = filteredExams.filter(e => e.school_id === school.id)
+                    const isExpanded = expandedSchool === school.id
+
+                    return (
+                      <div key={school.id}>
+                        <Card className="cursor-pointer hover:shadow-lg transition-all" onClick={() => setExpandedSchool(isExpanded ? null : school.id)}>
+                          <CardHeader className="pb-3">
+                            <div className="flex justify-between items-start">
+                              <div><CardTitle className="text-lg flex items-center"><School className="w-5 h-5 mr-2" />{school.name}</CardTitle><p className="text-sm text-gray-500">{school.school_code}</p></div>
+                              <div className="flex items-center gap-2"><Badge>{schoolExams.length} Exams</Badge>{isExpanded ? <ChevronUp /> : <ChevronDown />}</div>
+                            </div>
+                          </CardHeader>
+                        </Card>
+
+                        {isExpanded && schoolExams.length > 0 && (
+                          <div className="ml-4 mt-2 space-y-2 animate-in slide-in-from-top">
+                            {schoolExams.map((exam) => {
+                              const isExamExpanded = expandedExam === exam.id
+                              return (
+                                <Card key={exam.id} className="cursor-pointer hover:shadow-md transition-all">
+                                  <CardHeader className="py-3" onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (!isExamExpanded) loadStudentGrades(exam.id, exam.class_id)
+                                    setExpandedExam(isExamExpanded ? null : exam.id)
+                                  }}>
+                                    <div className="flex justify-between items-center">
+                                      <div>
+                                        <CardTitle className="text-base flex items-center"><FileText className="w-4 h-4 mr-2" />{exam.title}</CardTitle>
+                                        <p className="text-xs text-gray-500 mt-1">{exam.class_name} - {exam.subject_name} - {exam.exam_date}</p>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="outline">{exam.total_marks} marks</Badge>
+                                        {exam.graded_count === exam.total_students && exam.total_students > 0 ? (
+                                          <Badge className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Graded</Badge>
+                                        ) : (
+                                          <Badge className="bg-yellow-100 text-yellow-800"><Clock className="w-3 h-3 mr-1" />{exam.graded_count}/{exam.total_students}</Badge>
+                                        )}
+                                        {isExamExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                      </div>
+                                    </div>
+                                  </CardHeader>
+
+                                  {isExamExpanded && (
+                                    <CardContent className="space-y-3 border-t pt-3">
+                                      <div className="flex justify-between items-center mb-2">
+                                        <p className="text-sm font-medium">Enter Grades</p>
+                                        <div className="flex gap-2">
+                                          <Button size="sm" onClick={(e) => { e.stopPropagation(); handleSaveGrades(exam.id) }} disabled={savingGrades}>
+                                            <Save className="w-3 h-3 mr-1" />{savingGrades ? 'Saving...' : 'Save Grades'}
+                                          </Button>
+                                          <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); handleDeleteExam(exam.id, exam.title) }}>
+                                            <Trash2 className="w-3 h-3 mr-1" />Delete Exam
+                                          </Button>
+                                        </div>
+                                      </div>
+                                      <div className="max-h-96 overflow-y-auto">
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow>
+                                              <TableHead>Student</TableHead>
+                                              <TableHead>Username</TableHead>
+                                              <TableHead>Marks</TableHead>
+                                              <TableHead>Percentage</TableHead>
+                                              <TableHead>Grade</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {studentGrades.map((sg) => (
+                                              <TableRow key={sg.student_id}>
+                                                <TableCell>{sg.student_name}</TableCell>
+                                                <TableCell className="text-xs text-gray-500">{sg.username}</TableCell>
+                                                <TableCell>
+                                                  <Input type="number" min="0" max={exam.total_marks} value={sg.marks_obtained || ''} 
+                                                    onChange={(e) => handleMarksChange(sg.student_id, e.target.value, exam.total_marks)} 
+                                                    className="w-20" onClick={(e) => e.stopPropagation()} />
+                                                </TableCell>
+                                                <TableCell>{sg.percentage !== null ? `${sg.percentage.toFixed(1)}%` : '-'}</TableCell>
+                                                <TableCell>
+                                                  {sg.grade && (
+                                                    <Badge className={
+                                                      sg.grade === 'A' ? 'bg-green-100 text-green-800' :
+                                                      sg.grade === 'B' ? 'bg-blue-100 text-blue-800' :
+                                                      sg.grade === 'C' ? 'bg-yellow-100 text-yellow-800' :
+                                                      sg.grade === 'D' ? 'bg-orange-100 text-orange-800' :
+                                                      'bg-red-100 text-red-800'
+                                                    }>{sg.grade}</Badge>
+                                                  )}
+                                                </TableCell>
+                                              </TableRow>
+                                            ))}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    </CardContent>
+                                  )}
+                                </Card>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </DashboardLayout>
+  )
+}
+
+
+
+
+heyy can you help me alter some details in my table in my DB. for some reason i dont know but all the names of the students, teahcers and admins, are not correct, like they all ended up being some random letters pertaining to their schools plus some random numbers. so i would like you to give me an alter sql command for all the full_name fields in my profiles table. and the name should be any zimbabwe name and surname, just just resting data. 
+eg can be:
+John Mutalaki
+Tapiwa Zindota
+James Chiukuira
+
+just random names
+
+So if the role = teacher/school_admin/parent
+then name should start with either Mrs/Ms/Mr, something like that
+eg.:
+Mr. Mupunga Trymore
+
+but if the role = student
+the name should not have that salutation
+eg.:
+John Mutalaki
+
+table name: profiles
+table fields:
+| id   | email   | username | full_name | role | school_id | created_at | updated_at |
+
+just change only the full_name field only
