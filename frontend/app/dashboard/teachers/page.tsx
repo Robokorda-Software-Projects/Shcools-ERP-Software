@@ -3,370 +3,415 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
-import DashboardLayout from '@/components/dashboard/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
+import DashboardLayout from '@/components/dashboard/DashboardLayout'
+import { Users, GraduationCap, FileText, School, Calendar, BookOpen, ClipboardList, TrendingUp, Award, Bell, Clock, MessageSquare, Star, Trophy, BarChart3, Download, Upload, Home, Settings, ChevronRight, Activity, Target, CheckCircle2, CalendarDays, Phone, Mail, MapPin, Globe, Shield } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { toast } from 'sonner'
-import { Plus, School, Users, GraduationCap, ChevronDown, ChevronUp, Trash2, BookOpen, UserCircle } from 'lucide-react'
+import { Progress } from '@/components/ui/progress'
+import { Badge } from '@/components/ui/badge'
+import Image from 'next/image'
 
-interface School {
+interface SchoolInfo {
   id: string
   name: string
   school_code: string
   school_type: string
-  teacher_count: number
+  address: string | null
+  phone: string | null
+  contact_email: string | null
 }
 
-interface Teacher {
-  id: string
-  user_id: string
-  username: string
-  full_name: string
-  email: string
-  school_id: string
-  school_name: string
-  school_type: string
-  subjects: string[]
-  classes: string[]
-  assignment_count: number
-}
-
-export default function TeachersPage() {
-  const { user, profile, loading: authLoading } = useAuth()
+export default function DashboardPage() {
+  const { user, profile, loading } = useAuth()
   const router = useRouter()
-  const [schools, setSchools] = useState<School[]>([])
-  const [teachers, setTeachers] = useState<Teacher[]>([])
-  const [subjects, setSubjects] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [expandedSchool, setExpandedSchool] = useState<string | null>(null)
-  const [expandedTeacher, setExpandedTeacher] = useState<string | null>(null)
-  
-  const [filterSchoolType, setFilterSchoolType] = useState<string>('all')
-  const [filterSchool, setFilterSchool] = useState<string>('all')
-  const [filterSubject, setFilterSubject] = useState<string>('all')
-  const [searchQuery, setSearchQuery] = useState('')
-
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [selectedSchoolId, setSelectedSchoolId] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null)
+  const [stats, setStats] = useState({
+    classes: 0,
+    subjects: 0,
+    students: 0,
+    upcomingExams: 0,
+    pendingAssignments: 0,
+    todayClasses: 0,
+    attendanceRate: 95,
+    avgGrade: 75
+  })
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (!loading && !user) {
       router.push('/login')
     }
-  }, [user, authLoading, router])
+  }, [user, loading, router])
 
   useEffect(() => {
     if (profile) {
-      loadData()
+      if (profile.role === 'teacher') {
+        loadTeacherData()
+      }
+      if (profile.school_id) {
+        loadSchoolInfo()
+      }
     }
   }, [profile])
 
-  const loadData = async () => {
-    setLoading(true)
-
-    let schoolsQuery = supabase.from('schools').select('id, name, school_code, school_type').order('school_type').order('name')
-    if (profile?.role === 'school_admin' && profile?.school_id) {
-      schoolsQuery = schoolsQuery.eq('id', profile.school_id)
-    }
-
-    const { data: schoolsData } = await schoolsQuery
-    const schoolsWithCount = await Promise.all(
-      (schoolsData || []).map(async (school) => {
-        const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'teacher').eq('school_id', school.id)
-        return { ...school, teacher_count: count || 0 }
-      })
-    )
-    setSchools(schoolsWithCount)
-
-    let subjectsQuery = supabase.from('subjects').select('*').order('name')
-    if (profile?.role === 'school_admin' && profile?.school_id) {
-      subjectsQuery = subjectsQuery.eq('school_id', profile.school_id)
-    }
-    const { data: subjectsData } = await subjectsQuery
-    setSubjects(subjectsData || [])
-
-    let teachersQuery = supabase.from('profiles').select('id, username, full_name, email, school_id, schools(name, school_type)').eq('role', 'teacher').order('full_name')
-    if (profile?.role === 'school_admin' && profile?.school_id) {
-      teachersQuery = teachersQuery.eq('school_id', profile.school_id)
-    }
-
-    const { data: teachersData } = await teachersQuery
-
-    const teachersWithAssignments = await Promise.all(
-      (teachersData || []).map(async (teacher: any) => {
-        const { data: assignmentsData } = await supabase.from('teacher_subject_assignments').select('subject_id, subjects(name)').eq('teacher_id', teacher.id)
-        const { data: classAssignmentsData } = await supabase.from('class_subject_assignments').select('class_id, classes(grade_level, section)').eq('teacher_id', teacher.id)
-
-        return {
-          id: teacher.id,
-          user_id: teacher.id,
-          username: teacher.username,
-          full_name: teacher.full_name,
-          email: teacher.email,
-          school_id: teacher.school_id,
-          school_name: teacher.schools?.name || 'Unknown',
-          school_type: teacher.schools?.school_type || 'Unknown',
-          subjects: assignmentsData?.map((a: any) => a.subjects?.name).filter(Boolean) || [],
-          classes: classAssignmentsData?.map((a: any) => `${a.classes?.grade_level} ${a.classes?.section}`).filter(Boolean) || [],
-          assignment_count: (assignmentsData?.length || 0) + (classAssignmentsData?.length || 0)
-        }
-      })
-    )
-    setTeachers(teachersWithAssignments)
-    setLoading(false)
-  }
-
-  const generateTeacherUsername = (schoolCode: string) => {
-    const randomNum = Math.floor(10000000 + Math.random() * 90000000)
-    return `${schoolCode}-TC-${randomNum}`
-  }
-
-  const handleCreateTeacher = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitting(true)
+  const loadSchoolInfo = async () => {
+    if (!profile?.school_id) return
 
     try {
-      const school = schools.find(s => s.id === selectedSchoolId)
-      if (!school) throw new Error('School not found')
+      const { data } = await supabase
+        .from('schools')
+        .select('*')
+        .eq('id', profile.school_id)
+        .single()
 
-      const username = generateTeacherUsername(school.school_code)
-
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: email,
-        password: password,
-        email_confirm: true,
-        user_metadata: { full_name: fullName }
-      })
-
-      if (authError) throw authError
-
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: authData.user.id,
-        email: email,
-        username: username,
-        full_name: fullName,
-        role: 'teacher',
-        school_id: selectedSchoolId
-      })
-
-      if (profileError) throw profileError
-
-      toast.success('Teacher created successfully!', { description: `Username: ${username}` })
-      setDialogOpen(false)
-      setFullName('')
-      setEmail('')
-      setPassword('')
-      setSelectedSchoolId('')
-      loadData()
-    } catch (error: any) {
-      toast.error('Failed to create teacher', { description: error.message })
-    }
-    setSubmitting(false)
-  }
-
-  const handleDeleteTeacher = async (teacherId: string, teacherName: string) => {
-    if (!confirm(`Delete ${teacherName}? All assignments will be removed.`)) return
-    const { error } = await supabase.from('profiles').delete().eq('id', teacherId)
-    if (error) {
-      toast.error('Failed to delete teacher')
-    } else {
-      toast.success('Teacher deleted successfully!')
-      loadData()
+      if (data) {
+        setSchoolInfo(data)
+      }
+    } catch (error) {
+      console.error('Error loading school info:', error)
     }
   }
 
-  const filteredTeachers = teachers.filter(teacher => {
-    if (filterSchoolType !== 'all' && teacher.school_type !== filterSchoolType) return false
-    if (filterSchool !== 'all' && teacher.school_id !== filterSchool) return false
-    if (filterSubject !== 'all' && !teacher.subjects.includes(subjects.find(s => s.id === filterSubject)?.name)) return false
-    if (searchQuery && !teacher.full_name.toLowerCase().includes(searchQuery.toLowerCase()) && 
-        !teacher.username.toLowerCase().includes(searchQuery.toLowerCase())) return false
-    return true
-  })
+  const loadTeacherData = async () => {
+    if (!profile?.id) return
 
-  const filteredSchools = schools.filter(school => {
-    if (filterSchoolType !== 'all' && school.school_type !== filterSchoolType) return false
-    return filteredTeachers.some(teacher => teacher.school_id === school.id)
-  })
+    try {
+      // Get classes assigned to teacher
+      const { data: classAssignments } = await supabase
+        .from('class_subject_assignments')
+        .select(`
+          class_id,
+          classes!inner(grade_level, section)
+        `)
+        .eq('teacher_id', profile.id)
+        .eq('classes.school_id', profile.school_id)
 
-  if (authLoading || loading) {
-    return <DashboardLayout title="Teachers Management"><div>Loading...</div></DashboardLayout>
+      // Get unique classes with details
+      const classMap = new Map()
+      classAssignments?.forEach(assignment => {
+        if (!classMap.has(assignment.class_id)) {
+          classMap.set(assignment.class_id, {
+            class_id: assignment.class_id,
+            grade_level: assignment.classes.grade_level,
+            section: assignment.classes.section,
+            subject_count: 0,
+            student_count: 0
+          })
+        }
+        const cls = classMap.get(assignment.class_id)
+        cls.subject_count += 1
+      })
+
+      // Get student counts for each class
+      for (const cls of Array.from(classMap.values())) {
+        const { count } = await supabase
+          .from('students')
+          .select('*', { count: 'exact', head: true })
+          .eq('class_id', cls.class_id)
+        
+        cls.student_count = count || 0
+      }
+
+      const classesArray = Array.from(classMap.values())
+
+      // Get subjects count
+      const { count: subjectCount } = await supabase
+        .from('teacher_subject_assignments')
+        .select('*', { count: 'exact', head: true })
+        .eq('teacher_id', profile.id)
+        .eq('school_id', profile.school_id)
+
+      // Get total students
+      const totalStudents = classesArray.reduce((sum, cls) => sum + cls.student_count, 0)
+
+      setStats({
+        classes: classesArray.length,
+        subjects: subjectCount || 0,
+        students: totalStudents,
+        upcomingExams: 3, // Mock data
+        pendingAssignments: 5, // Mock data
+        todayClasses: classesArray.length,
+        attendanceRate: 95,
+        avgGrade: 75
+      })
+
+    } catch (error) {
+      console.error('Error loading teacher data:', error)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
+        <div className="flex flex-col items-center">
+          <div className="h-16 w-16 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin mb-4"></div>
+          <p className="text-lg font-medium text-gray-700">Loading your dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user || !profile) {
+    return null
   }
 
   return (
-    <DashboardLayout title="Teachers Management">
+    <DashboardLayout title="Dashboard">
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <p className="text-gray-600">Manage teachers and their assignments</p>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700"><Plus className="w-4 h-4 mr-2" />Create Teacher</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Create New Teacher</DialogTitle><DialogDescription>Add a new teacher to the system</DialogDescription></DialogHeader>
-              <form onSubmit={handleCreateTeacher} className="space-y-4">
-                <div><Label>Full Name *</Label><Input placeholder="e.g., John Doe" value={fullName} onChange={(e) => setFullName(e.target.value)} required /></div>
-                <div><Label>Email *</Label><Input type="email" placeholder="teacher@school.com" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
-                <div><Label>Password *</Label><Input type="password" placeholder="Enter password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
-                <div><Label>School *</Label>
-                  <Select value={selectedSchoolId} onValueChange={setSelectedSchoolId} required>
-                    <SelectTrigger><SelectValue placeholder="Select school" /></SelectTrigger>
-                    <SelectContent>{schools.map((school) => <SelectItem key={school.id} value={school.id}>{school.name}</SelectItem>)}</SelectContent>
-                  </Select>
+        {/* Hero Welcome Section */}
+        <Card className="bg-gradient-to-r from-blue-600 via-blue-700 to-purple-700 text-white overflow-hidden">
+          <CardContent className="pt-8 pb-8 relative">
+            <div className="absolute top-0 right-0 w-64 h-64 opacity-10">
+              <div className="h-full w-full bg-gradient-to-br from-white to-transparent rounded-full"></div>
+            </div>
+            <div className="relative z-10">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                <div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="relative h-16 w-16">
+                      <Image
+                        src="/images/logos/schools/demo-high-school/logo.png"
+                        alt="School Logo"
+                        fill
+                        className="rounded-lg object-contain border-2 border-white/30"
+                      />
+                    </div>
+                    <div>
+                      <h1 className="text-3xl font-bold mb-1">
+                        Welcome, <span className="text-yellow-300">{profile.full_name}</span>!
+                      </h1>
+                      <p className="text-blue-100">
+                        {schoolInfo?.name ? `${schoolInfo.name} Teacher Dashboard` : 'Your Teaching Dashboard'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 mt-4">
+                    <Badge variant="secondary" className="bg-white/20 text-white border-0">
+                      <Clock className="h-3 w-3 mr-1" />
+                      {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    </Badge>
+                    <Badge variant="secondary" className="bg-white/20 text-white border-0">
+                      <Calendar className="h-3 w-3 mr-1" />
+                      {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                    </Badge>
+                  </div>
                 </div>
-                <Button type="submit" className="w-full" disabled={submitting}>{submitting ? 'Creating...' : 'Create Teacher'}</Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Filters</CardTitle></CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div><Label>School Type</Label>
-                <Select value={filterSchoolType} onValueChange={setFilterSchoolType}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="Primary">Primary</SelectItem><SelectItem value="Secondary">Secondary</SelectItem></SelectContent>
-                </Select>
+                <div className="flex items-center gap-3">
+                  <Button 
+                    variant="outline" 
+                    className="bg-white/10 text-white border-white/30 hover:bg-white/20"
+                    onClick={() => router.push('/dashboard/classes')}
+                  >
+                    <GraduationCap className="mr-2 h-4 w-4" />
+                    My Classes
+                  </Button>
+                  <Button 
+                    className="bg-yellow-500 hover:bg-yellow-600 text-white"
+                    onClick={() => router.push('/dashboard/attendance')}
+                  >
+                    <ClipboardList className="mr-2 h-4 w-4" />
+                    Mark Attendance
+                  </Button>
+                </div>
               </div>
-              <div><Label>School</Label>
-                <Select value={filterSchool} onValueChange={setFilterSchool}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="all">All Schools</SelectItem>{filteredSchools.map((school) => <SelectItem key={school.id} value={school.id}>{school.name}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div><Label>Subject</Label>
-                <Select value={filterSubject} onValueChange={setFilterSubject}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="all">All Subjects</SelectItem>{subjects.filter(s => filterSchool === 'all' || s.school_id === filterSchool).map((subj: any) => <SelectItem key={subj.id} value={subj.id}>{subj.name}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div><Label>Search</Label><Input placeholder="Name or username..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
             </div>
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
-            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Total Teachers</CardTitle></CardHeader>
-            <CardContent><div className="text-4xl font-bold">{filteredTeachers.length}</div></CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
-            <CardHeader><CardTitle className="text-sm font-medium opacity-90">With Assignments</CardTitle></CardHeader>
-            <CardContent><div className="text-4xl font-bold">{filteredTeachers.filter(t => t.assignment_count > 0).length}</div></CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
-            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Total Assignments</CardTitle></CardHeader>
-            <CardContent><div className="text-4xl font-bold">{filteredTeachers.reduce((sum, t) => sum + t.assignment_count, 0)}</div></CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          {['Primary', 'Secondary'].map((schoolType) => {
-            const schoolsOfType = filteredSchools.filter(s => s.school_type === schoolType)
-            if (schoolsOfType.length === 0) return null
-
-            return (
-              <div key={schoolType}>
-                <h2 className="text-2xl font-bold mb-4 flex items-center"><GraduationCap className="mr-2" />{schoolType} Schools</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {schoolsOfType.map((school) => {
-                    const schoolTeachers = filteredTeachers.filter(t => t.school_id === school.id)
-                    const isExpanded = expandedSchool === school.id
-
-                    return (
-                      <div key={school.id} className="space-y-2">
-                        <Card className="cursor-pointer hover:shadow-lg transition-all" onClick={() => setExpandedSchool(isExpanded ? null : school.id)}>
-                          <CardHeader className="pb-3">
-                            <div className="flex justify-between items-start">
-                              <div><CardTitle className="text-lg">{school.name}</CardTitle><p className="text-sm text-gray-500">{school.school_code}</p></div>
-                              {isExpanded ? <ChevronUp /> : <ChevronDown />}
-                            </div>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center text-gray-600"><Users className="w-4 h-4 mr-2" /><span className="text-sm">{schoolTeachers.length} Teachers</span></div>
-                              <Badge variant="outline">{school.school_type}</Badge>
-                            </div>
-                          </CardContent>
-                        </Card>
-
-                        {isExpanded && schoolTeachers.length > 0 && (
-                          <div className="ml-4 space-y-2 animate-in slide-in-from-top">
-                            {schoolTeachers.map((teacher) => {
-                              const isTeacherExpanded = expandedTeacher === teacher.id
-
-                              return (
-                                <Card key={teacher.id} className="cursor-pointer hover:shadow-md transition-all" onClick={(e) => { e.stopPropagation(); setExpandedTeacher(isTeacherExpanded ? null : teacher.id) }}>
-                                  <CardHeader className="py-3">
-                                    <div className="flex justify-between items-center">
-                                      <div className="flex items-center gap-3">
-                                        <UserCircle className="w-8 h-8 text-gray-400" />
-                                        <div><CardTitle className="text-base">{teacher.full_name}</CardTitle><p className="text-xs text-gray-500">{teacher.username}</p></div>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <Badge>{teacher.assignment_count} assignments</Badge>
-                                        {isTeacherExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                                      </div>
-                                    </div>
-                                  </CardHeader>
-
-                                  {isTeacherExpanded && (
-                                    <CardContent className="space-y-3 border-t pt-3">
-                                      <div className="grid grid-cols-2 gap-3 text-sm">
-                                        <div><span className="text-gray-500">Email:</span><p className="font-medium">{teacher.email}</p></div>
-                                        <div><span className="text-gray-500">School:</span><p className="font-medium">{teacher.school_name}</p></div>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500 text-sm flex items-center mb-1"><BookOpen className="w-3 h-3 mr-1" />Subjects:</span>
-                                        <div className="flex flex-wrap gap-1">
-                                          {teacher.subjects.length > 0 ? teacher.subjects.map((subj, idx) => <Badge key={idx} variant="outline">{subj}</Badge>) : <span className="text-xs text-gray-400">No subjects assigned</span>}
-                                        </div>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500 text-sm flex items-center mb-1"><GraduationCap className="w-3 h-3 mr-1" />Classes:</span>
-                                        <div className="flex flex-wrap gap-1">
-                                          {teacher.classes.length > 0 ? teacher.classes.map((cls, idx) => <Badge key={idx} variant="outline">{cls}</Badge>) : <span className="text-xs text-gray-400">No classes assigned</span>}
-                                        </div>
-                                      </div>
-                                      <div className="flex gap-2 pt-2">
-                                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); router.push('/dashboard/teacher-assignments') }}>
-                                          <BookOpen className="w-3 h-3 mr-1" />Manage Assignments
-                                        </Button>
-                                        <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); handleDeleteTeacher(teacher.id, teacher.full_name) }}>
-                                          <Trash2 className="w-3 h-3 mr-1" />Delete
-                                        </Button>
-                                      </div>
-                                    </CardContent>
-                                  )}
-                                </Card>
-                              )
-                            })}
-                          </div>
-                        )}
-
-                        {isExpanded && schoolTeachers.length === 0 && (
-                          <Card className="ml-4"><CardContent className="py-6 text-center text-gray-500">No teachers found for this school</CardContent></Card>
-                        )}
+        {/* School Information Banner */}
+        {schoolInfo && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="relative h-20 w-20">
+                    <Image
+                      src="/images/logos/schools/demo-high-school/logo.png"
+                      alt={schoolInfo.name}
+                      fill
+                      className="rounded-lg object-contain"
+                    />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900">{schoolInfo.name}</h2>
+                    <div className="flex items-center gap-3 mt-2">
+                      <div className="flex items-center gap-1 text-sm text-gray-600">
+                        <MapPin className="h-4 w-4" />
+                        <span>{schoolInfo.address || 'Address not provided'}</span>
                       </div>
-                    )
-                  })}
+                      <div className="flex items-center gap-1 text-sm text-gray-600">
+                        <MapPin className="h-4 w-4" />
+                        <span>{schoolInfo.address || 'Address not provided'}</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-sm text-gray-600">
+                        <Phone className="h-4 w-4" />
+                        <span>{schoolInfo.phone || 'Phone not provided'}</span>
+                      </div>
+                    </div>
+                    <div className="mt-1">
+                      <Badge variant="outline">{schoolInfo.school_type} School</Badge>
+                      <Badge variant="outline" className="ml-2">Code: {schoolInfo.school_code}</Badge>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button variant="outline" size="sm">
+                    <Globe className="mr-2 h-4 w-4" />
+                    School Website
+                  </Button>
+                  <Button variant="outline" size="sm">
+                    <Mail className="mr-2 h-4 w-4" />
+                    Contact Admin
+                  </Button>
                 </div>
               </div>
-            )
-          })}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Quick Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Card className="hover:shadow-lg transition-all duration-300 hover:scale-[1.02] cursor-pointer border-l-4 border-l-blue-500"
+                onClick={() => router.push('/dashboard/classes')}>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Total Classes</p>
+                  <h3 className="text-3xl font-bold text-gray-900 mt-2">{stats.classes}</h3>
+                  <div className="flex items-center gap-1 mt-1">
+                    <TrendingUp className="h-4 w-4 text-green-500" />
+                    <span className="text-xs text-green-600">+2 this term</span>
+                  </div>
+                </div>
+                <div className="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <GraduationCap className="h-6 w-6 text-blue-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-all duration-300 hover:scale-[1.02] cursor-pointer border-l-4 border-l-purple-500"
+                onClick={() => router.push('/dashboard/students')}>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Total Students</p>
+                  <h3 className="text-3xl font-bold text-gray-900 mt-2">{stats.students}</h3>
+                  <p className="text-xs text-gray-500 mt-1">Across all classes</p>
+                </div>
+                <div className="h-12 w-12 rounded-lg bg-purple-100 flex items-center justify-center">
+                  <Users className="h-6 w-6 text-purple-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-all duration-300 hover:scale-[1.02] cursor-pointer border-l-4 border-l-orange-500"
+                onClick={() => router.push('/dashboard/attendance')}>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Today's Attendance</p>
+                  <h3 className="text-3xl font-bold text-gray-900 mt-2">{stats.attendanceRate}%</h3>
+                  <div className="mt-2">
+                    <Progress value={stats.attendanceRate} className="h-2" />
+                  </div>
+                </div>
+                <div className="h-12 w-12 rounded-lg bg-orange-100 flex items-center justify-center">
+                  <CheckCircle2 className="h-6 w-6 text-orange-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-all duration-300 hover:scale-[1.02] cursor-pointer border-l-4 border-l-green-500"
+                onClick={() => router.push('/dashboard/grading')}>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Avg. Student Grade</p>
+                  <h3 className="text-3xl font-bold text-gray-900 mt-2">{stats.avgGrade}%</h3>
+                  <div className="flex items-center gap-1 mt-1">
+                    <TrendingUp className="h-4 w-4 text-green-500" />
+                    <span className="text-xs text-green-600">+5% this month</span>
+                  </div>
+                </div>
+                <div className="h-12 w-12 rounded-lg bg-green-100 flex items-center justify-center">
+                  <Award className="h-6 w-6 text-green-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
+
+        {/* Robokorda Branding Section */}
+        <Card className="bg-gradient-to-r from-gray-900 to-gray-800 text-white">
+          <CardContent className="pt-8 pb-8">
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+              <div className="flex items-center gap-4">
+                <div className="relative h-20 w-48">
+                  <Image
+                    src="/images/logos/robokorda/logo-white.png"
+                    alt="Robokorda Africa"
+                    fill
+                    className="object-contain"
+                  />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold">Powered by Robokorda Africa</h3>
+                  <p className="text-gray-300 mt-1">
+                    Empowering African Education with cutting-edge technology solutions
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <Button 
+                  variant="outline" 
+                  className="text-white border-white/30 hover:bg-white/10"
+                  onClick={() => window.open('https://www.robokorda.com/', '_blank')}
+                >
+                  <Star className="mr-2 h-4 w-4" />
+                  Visit Website
+                </Button>
+                <Button 
+                  className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                  onClick={() => window.open('https://www.robokorda.com/product-details/', '_blank')}
+                >
+                  <Phone className="mr-2 h-4 w-4" />
+                  Contact Support
+                </Button>
+              </div>
+            </div>
+            <div className="mt-6 pt-6 border-t border-gray-700">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="text-center">
+                  <div className="h-8 w-8 rounded-full bg-blue-500/20 flex items-center justify-center mx-auto mb-2">
+                    <Shield className="h-4 w-4 text-blue-300" />
+                  </div>
+                  <p className="text-gray-300">Secure & Reliable</p>
+                </div>
+                <div className="text-center">
+                  <div className="h-8 w-8 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-2">
+                    <TrendingUp className="h-4 w-4 text-green-300" />
+                  </div>
+                  <p className="text-gray-300">Performance Focused</p>
+                </div>
+                <div className="text-center">
+                  <div className="h-8 w-8 rounded-full bg-purple-500/20 flex items-center justify-center mx-auto mb-2">
+                    <Globe className="h-4 w-4 text-purple-300" />
+                  </div>
+                  <p className="text-gray-300">Made for Africa</p>
+                </div>
+                <div className="text-center">
+                  <div className="h-8 w-8 rounded-full bg-orange-500/20 flex items-center justify-center mx-auto mb-2">
+                    <Clock className="h-4 w-4 text-orange-300" />
+                  </div>
+                  <p className="text-gray-300">24/7 Support</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </DashboardLayout>
   )

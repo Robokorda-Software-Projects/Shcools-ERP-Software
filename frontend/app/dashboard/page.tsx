@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
-import { Users, GraduationCap, FileText, School, Calendar, BookOpen, ClipboardList } from 'lucide-react'
+import { Users, GraduationCap, FileText, School, Calendar, CalendarDays, BookOpen, ClipboardList } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface SchoolInfo {
@@ -171,8 +171,22 @@ export default function DashboardPage() {
   return (
     <DashboardLayout title="Dashboard">
       <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+          {/* Welcome Card */}
+          <Card className="bg-gradient-to-r from-purple-500 to-purple-700 text-white">
+            <CardHeader>
+              <CardTitle className="text-2xl">Welcome back, {profile.full_name}!</CardTitle>
+              <CardDescription className="text-purple-100">
+                {profile.role === 'teacher' && 'Teacher Dashboard - Manage your classes and students'}
+                {profile.role === 'school_admin' && 'School Administrator Dashboard'}
+                {profile.role === 'super_admin' && 'System Administrator Dashboard'}
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
         {/* School Info Banner */}
         {schoolInfo && (
+          
           <Card className="bg-gradient-to-r from-blue-600 to-blue-800 text-white">
             <CardContent className="pt-6">
               <div className="flex items-start justify-between">
@@ -181,14 +195,20 @@ export default function DashboardPage() {
                     <School className="h-8 w-8" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">{schoolInfo.name}</h2>
+                    <h2 className="text-3xl font-bold">{schoolInfo.name}</h2>
                     <p className="text-blue-100 text-sm">
                       {schoolInfo.school_code} • {schoolInfo.school_type} School
                     </p>
                     {schoolInfo.address && (
                       <p className="text-blue-100 text-sm mt-1">{schoolInfo.address}</p>
                     )}
+                    <p className="text-xs text-white-500 mt-1 flex items-center gap-1">
+                      <CalendarDays className="h-3 w-3" />
+                      Academic Year 2025
+                    </p>
                   </div>
+                    
+                  
                 </div>
                 {schoolInfo.phone && (
                   <div className="text-right">
@@ -199,24 +219,16 @@ export default function DashboardPage() {
               </div>
             </CardContent>
           </Card>
+        
         )}
+        </div>
 
-        {/* Welcome Card */}
-        <Card className="bg-gradient-to-r from-purple-500 to-purple-700 text-white">
-          <CardHeader>
-            <CardTitle className="text-2xl">Welcome back, {profile.full_name}!</CardTitle>
-            <CardDescription className="text-purple-100">
-              {profile.role === 'teacher' && 'Teacher Dashboard - Manage your classes and students'}
-              {profile.role === 'school_admin' && 'School Administrator Dashboard'}
-              {profile.role === 'super_admin' && 'System Administrator Dashboard'}
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        
 
         {/* Teacher Stats */}
         {profile.role === 'teacher' && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/dashboard/classes')}>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="text-sm font-medium text-gray-600">My Classes</CardTitle>
@@ -250,27 +262,6 @@ export default function DashboardPage() {
                 </CardContent>
               </Card>
 
-              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/dashboard/exams')}>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">Upcoming Exams</CardTitle>
-                  <Calendar className="h-5 w-5 text-orange-600" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-orange-600">{stats.upcomingExams}</div>
-                  <p className="text-xs text-gray-500 mt-1">Next 7 days</p>
-                </CardContent>
-              </Card>
-
-              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/dashboard/assignments')}>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">Pending Assignments</CardTitle>
-                  <ClipboardList className="h-5 w-5 text-red-600" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-red-600">{stats.pendingAssignments}</div>
-                  <p className="text-xs text-gray-500 mt-1">Need grading</p>
-                </CardContent>
-              </Card>
 
               <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/dashboard/attendance')}>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -288,10 +279,9 @@ export default function DashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Quick Actions</CardTitle>
-                <CardDescription>Common tasks for today</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 ">
                   <Button 
                     variant="outline" 
                     className="h-24 flex flex-col gap-2 hover:bg-blue-50 hover:border-blue-300"
