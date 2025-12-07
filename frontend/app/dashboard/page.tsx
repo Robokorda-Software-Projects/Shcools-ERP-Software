@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
 import { Users, GraduationCap, FileText, School, Calendar, CalendarDays, BookOpen, ClipboardList } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import Image from 'next/image'
 
 interface SchoolInfo {
   name: string
@@ -175,7 +176,7 @@ export default function DashboardPage() {
           {/* Welcome Card */}
           <Card className="bg-gradient-to-r from-purple-500 to-purple-700 text-white">
             <CardHeader>
-              <CardTitle className="text-2xl">Welcome back, {profile.full_name}!</CardTitle>
+              <CardTitle className="text-3xl">Welcome back, {profile.full_name}!</CardTitle>
               <CardDescription className="text-purple-100">
                 {profile.role === 'teacher' && 'Teacher Dashboard - Manage your classes and students'}
                 {profile.role === 'school_admin' && 'School Administrator Dashboard'}
@@ -191,9 +192,15 @@ export default function DashboardPage() {
             <CardContent className="pt-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="h-16 w-16 rounded-full bg-white/20 flex items-center justify-center">
-                    <School className="h-8 w-8" />
-                  </div>
+                    <div className="relative h-30 w-30 rounded-full overflow-hidden">
+                      <Image
+                        src="/images/logos/schools/demo-high-school/logo.png"
+                        alt={schoolInfo.name}
+                        fill
+                        className="object-cover" 
+                      />
+                    </div>
+
                   <div>
                     <h2 className="text-3xl font-bold">{schoolInfo.name}</h2>
                     <p className="text-blue-100 text-sm">
@@ -202,20 +209,17 @@ export default function DashboardPage() {
                     {schoolInfo.address && (
                       <p className="text-blue-100 text-sm mt-1">{schoolInfo.address}</p>
                     )}
+                     {schoolInfo.phone && (
+                        <div className="text-left">
+                          <p className="text-blue-100 text-sm">{schoolInfo.phone}</p>
+                        </div>
+                      )}
                     <p className="text-xs text-white-500 mt-1 flex items-center gap-1">
                       <CalendarDays className="h-3 w-3" />
-                      Academic Year 2025
+                      Academic Year {new Date().getFullYear()}
                     </p>
                   </div>
-                    
-                  
                 </div>
-                {schoolInfo.phone && (
-                  <div className="text-right">
-                    <p className="text-blue-100 text-sm">Contact</p>
-                    <p className="font-semibold">{schoolInfo.phone}</p>
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>
