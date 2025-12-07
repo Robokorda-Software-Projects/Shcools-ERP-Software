@@ -92,8 +92,6 @@ export default function DashboardPage() {
         if (!classMap.has(assignment.class_id)) {
           classMap.set(assignment.class_id, {
             class_id: assignment.class_id,
-            grade_level: assignment.classes.grade_level,
-            section: assignment.classes.section,
             subject_count: 0,
             student_count: 0
           })

@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
 import { 
   LayoutDashboard, 
   School, 
@@ -35,8 +36,7 @@ import {
   Globe,
   Mail,
   Phone,
-  MapPin,
-  Badge
+  MapPin
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -429,7 +429,7 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
                     © {new Date().getFullYear()} Robokorda Africa. All rights reserved.
                   </span>
                   <Badge variant="outline" className="text-xs">
-                    v2.0.1
+                    v1.0.0
                   </Badge>
                 </div>
               </div>
