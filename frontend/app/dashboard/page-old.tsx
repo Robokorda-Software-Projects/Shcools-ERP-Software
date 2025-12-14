@@ -1,4 +1,9 @@
-﻿'use client'
+﻿// =====================================================
+// SUPER ADMIN DASHBOARD
+// app/dashboard/page.tsx
+// =====================================================
+
+'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -23,58 +28,43 @@ import {
   Eye,
   Settings,
   Calendar,
-  FileText,
-  User,
-  Mail,
-  Phone,
-  MapPin
+  FileText
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
 interface DashboardStats {
-  total_schools: number
-  total_students: number
-  total_school_admins: number
-  total_teachers: number
-  total_parents: number
   active_schools: number
   suspended_schools: number
+  total_schools: number
+  total_school_admins: number
+  total_teachers: number
+  total_students: number
+  total_parents: number
   actions_last_24h: number
   actions_last_week: number
   expired_subscriptions: number
   expiring_soon: number
-  male_students: number
-  female_students: number
+  recent_activities: Array<{
+    action_type: string
+    entity_type: string
+    performed_by_name: string
+    created_at: string
+  }>
 }
 
-interface SchoolWithDetails {
+interface RecentSchool {
   id: string
   name: string
   school_code: string
   school_type: string
-  status: string
   created_at: string
-  logo_url: string | null
-  address: string | null
-  phone: string | null
-  contact_email: string | null
-  principal_name: string | null
-  principal_email: string | null
-  principal_phone: string | null
+  status: string
   stats: {
-    total_students: number
-    male_students: number
-    female_students: number
-    total_classes: number
-    total_teachers: number
-    school_admin: {
-      id: string
-      full_name: string
-      email: string
-      username: string
-    } | null
+    students: number
+    teachers: number
+    admins: number
   }
 }
 
@@ -82,7 +72,7 @@ export default function SuperAdminDashboardPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
   const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [recentSchools, setRecentSchools] = useState<SchoolWithDetails[]>([])
+  const [recentSchools, setRecentSchools] = useState<RecentSchool[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -105,122 +95,56 @@ export default function SuperAdminDashboardPage() {
     try {
       setLoading(true)
 
-      // Load dashboard stats with real data
-      const { data: schoolsData } = await supabase
+      // Load dashboard stats
+      const { data: statsData, error: statsError } = await supabase
+        .rpc('super_admin_dashboard_stats')
+        .single()
+
+      if (statsError) throw statsError
+      setStats(statsData as DashboardStats)
+
+      // Load recent schools
+      const { data: schoolsData, error: schoolsError } = await supabase
         .from('schools')
-        .select('id, status')
-
-      const { data: studentsData } = await supabase
-        .from('students')
-        .select('id, gender')
-        .eq('student_status', 'active')
-
-      const { data: adminsData } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('role', 'school_admin')
-
-      const { data: teachersData } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('role', 'teacher')
-
-      const { data: parentsData } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('role', 'parent')
-
-      // Calculate counts
-      const totalSchools = schoolsData?.length || 0
-      const activeSchools = schoolsData?.filter(s => s.status === 'active').length || 0
-      const suspendedSchools = schoolsData?.filter(s => s.status === 'suspended').length || 0
-      
-      const totalStudents = studentsData?.length || 0
-      const maleStudents = studentsData?.filter(s => s.gender === 'Male').length || 0
-      const femaleStudents = studentsData?.filter(s => s.gender === 'Female').length || 0
-
-      // Load recent schools with detailed stats
-      const { data: recentSchoolsData, error: schoolsError } = await supabase
-        .from('schools')
-        .select(`
-          *,
-          classes!classes_school_id_fkey (
-            id
-          ),
-          profiles!profiles_school_id_fkey (
-            id,
-            full_name,
-            email,
-            username,
-            role
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(5)
 
       if (schoolsError) throw schoolsError
 
+      // Get stats for each school
       const schoolsWithStats = await Promise.all(
-        (recentSchoolsData || []).map(async (school) => {
-          // Get student stats for this school
-          const { data: schoolStudents } = await supabase
+        (schoolsData || []).map(async (school) => {
+          const { count: studentCount } = await supabase
             .from('students')
-            .select('id, gender')
+            .select('*', { count: 'exact', head: true })
             .eq('school_id', school.id)
             .eq('student_status', 'active')
 
-          // Get school admin for this school
-          const schoolAdmin = school.profiles?.find((p: { role: string }) => p.role === 'school_admin') || null
+          const { count: teacherCount } = await supabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true })
+            .eq('school_id', school.id)
+            .eq('role', 'teacher')
+
+          const { count: adminCount } = await supabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true })
+            .eq('school_id', school.id)
+            .eq('role', 'school_admin')
 
           return {
-            id: school.id,
-            name: school.name,
-            school_code: school.school_code,
-            school_type: school.school_type,
-            status: school.status,
-            created_at: school.created_at,
-            logo_url: school.logo_url,
-            address: school.address,
-            phone: school.phone,
-            contact_email: school.contact_email,
-            principal_name: school.principal_name,
-            principal_email: school.principal_email,
-            principal_phone: school.principal_phone,
+            ...school,
             stats: {
-              total_students: schoolStudents?.length || 0,
-              male_students: schoolStudents?.filter(s => s.gender === 'Male').length || 0,
-              female_students: schoolStudents?.filter(s => s.gender === 'Female').length || 0,
-              total_classes: school.classes?.length || 0,
-              total_teachers: school.profiles?.filter((p: { role: string }) => p.role === 'teacher').length || 0,
-              school_admin: schoolAdmin ? {
-                id: schoolAdmin.id,
-                full_name: schoolAdmin.full_name,
-                email: schoolAdmin.email,
-                username: schoolAdmin.username
-              } : null
-            }
+              students: studentCount || 0,
+              teachers: teacherCount || 0,
+              admins: adminCount || 0,
+            },
           }
         })
       )
 
       setRecentSchools(schoolsWithStats)
-
-      // Set stats
-      setStats({
-        total_schools: totalSchools,
-        total_students: totalStudents,
-        total_school_admins: adminsData?.length || 0,
-        total_teachers: teachersData?.length || 0,
-        total_parents: parentsData?.length || 0,
-        active_schools: activeSchools,
-        suspended_schools: suspendedSchools,
-        actions_last_24h: 0, // You'll need to implement this from audit logs
-        actions_last_week: 0,
-        expired_subscriptions: 0,
-        expiring_soon: 0,
-        male_students: maleStudents,
-        female_students: femaleStudents
-      })
 
     } catch (error: any) {
       console.error('Error loading dashboard:', error)
@@ -358,19 +282,18 @@ export default function SuperAdminDashboardPage() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium text-gray-600">
-                  Schools
+                  Active Schools
                 </CardTitle>
                 <School className="h-5 w-5 text-blue-600" />
               </div>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-blue-700">
-                {stats?.total_schools ?? 0}
+                {stats?.active_schools ?? 0}
               </div>
-              <div className="flex gap-4 mt-2 text-xs">
-                <span className="text-green-600">{stats?.active_schools || 0} active</span>
-                <span className="text-red-600">{stats?.suspended_schools || 0} suspended</span>
-              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {stats?.suspended_schools || 0} suspended
+              </p>
             </CardContent>
           </Card>
 
@@ -379,7 +302,7 @@ export default function SuperAdminDashboardPage() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium text-gray-600">
-                  Students
+                  Total Students
                 </CardTitle>
                 <GraduationCap className="h-5 w-5 text-purple-600" />
               </div>
@@ -388,10 +311,9 @@ export default function SuperAdminDashboardPage() {
               <div className="text-3xl font-bold text-purple-700">
                 {stats?.total_students?.toLocaleString() ?? 0}
               </div>
-              <div className="flex gap-4 mt-2 text-xs">
-                <span className="text-blue-600">♂️ {stats?.male_students || 0}</span>
-                <span className="text-pink-600">♀️ {stats?.female_students || 0}</span>
-              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Across all schools
+              </p>
             </CardContent>
           </Card>
 
@@ -400,17 +322,17 @@ export default function SuperAdminDashboardPage() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium text-gray-600">
-                  School Admins
+                  Total School Admins
                 </CardTitle>
                 <UserCog className="h-5 w-5 text-green-600" />
               </div>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-green-700">
-                {stats?.total_school_admins?.toLocaleString() ?? 0}
+                {stats?.total_teachers?.toLocaleString() ?? 0}
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                {stats?.total_teachers || 0} teachers
+                {stats?.total_school_admins || 0} school admins
               </p>
             </CardContent>
           </Card>
@@ -436,6 +358,62 @@ export default function SuperAdminDashboardPage() {
           </Card>
         </div>
 
+        {/* Alerts & Warnings */}
+        {(stats?.expired_subscriptions ?? 0) > 0 || (stats?.expiring_soon ?? 0) > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {(stats?.expired_subscriptions ?? 0) > 0 && (
+              <Card className="border-red-200 bg-red-50">
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                    {stats && stats.expired_subscriptions > 0 && <div>
+                      <p className="font-semibold text-red-900">
+                        {stats.expired_subscriptions} Expired Subscriptions
+                      </p>
+                      <p className="text-sm text-red-700 mt-1">
+                        Some schools have expired subscriptions and may lose access
+                      </p>
+                      <Button 
+                        size="sm" 
+                        className="mt-3 bg-red-600 hover:bg-red-700"
+                        onClick={() => router.push('/dashboard/schools?filter=expired')}
+                      >
+                        View Schools
+                      </Button>
+                    </div>}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {(stats?.expiring_soon ?? 0) > 0 && (
+              <Card className="border-yellow-200 bg-yellow-50">
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <Clock className="h-5 w-5 text-yellow-600 mt-0.5" />
+                    {stats && stats.expiring_soon > 0 && <div>
+                      <p className="font-semibold text-yellow-900">
+                        {stats.expiring_soon} Expiring Soon
+                      </p>
+                      <p className="text-sm text-yellow-700 mt-1">
+                        Subscriptions expiring in the next 30 days
+                      </p>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        className="mt-3 border-yellow-600 text-yellow-700 hover:bg-yellow-100"
+                        onClick={() => router.push('/dashboard/schools?filter=expiring')}
+                      >
+                        Review
+                      </Button>
+                    </div>}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        ) : null}
+
         {/* Recent Schools */}
         <Card>
           <CardHeader>
@@ -452,111 +430,45 @@ export default function SuperAdminDashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {recentSchools.map((school) => (
                 <div 
                   key={school.id}
-                  className="p-4 rounded-lg border hover:bg-gray-50 transition-colors"
+                  className="flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors"
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-4">
-                      {school.logo_url ? (
-                        <img 
-                          src={school.logo_url} 
-                          alt={school.name}
-                          className="h-16 w-16 rounded-lg object-cover border"
-                        />
-                      ) : (
-                        <div className="h-16 w-16 rounded-lg bg-blue-100 flex items-center justify-center">
-                          <School className="h-8 w-8 text-blue-600" />
-                        </div>
-                      )}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <p className="font-semibold text-gray-900">{school.name}</p>
-                          <Badge 
-                            className={
-                              school.status === 'active' 
-                                ? 'bg-green-100 text-green-800' 
-                                : school.status === 'suspended'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                            }
-                          >
-                            {school.status}
-                          </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            {school.school_type}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-gray-500 mt-1">
-                          {school.school_code}
-                        </p>
-                        {school.principal_name && (
-                          <p className="text-sm text-gray-600 mt-2">
-                            <User className="h-3 w-3 inline mr-1" />
-                            Principal: {school.principal_name}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-4 mt-3 text-sm">
-                          <div className="text-center">
-                            <p className="font-semibold text-gray-900">
-                              {school.stats.total_students}
-                            </p>
-                            <p className="text-xs text-gray-500">Students</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="font-semibold text-gray-900">
-                              {school.stats.total_classes}
-                            </p>
-                            <p className="text-xs text-gray-500">Classes</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="font-semibold text-gray-900">
-                              {school.stats.total_teachers}
-                            </p>
-                            <p className="text-xs text-gray-500">Teachers</p>
-                          </div>
-                        </div>
-                      </div>
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <School className="h-6 w-6 text-blue-600" />
                     </div>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => router.push(`/dashboard/schools/${school.id}`)}
-                    >
-                      View Details
-                    </Button>
+                    <div>
+                      <p className="font-semibold text-gray-900">{school.name}</p>
+                      <p className="text-sm text-gray-500">
+                        {school.school_code} • {school.school_type}
+                      </p>
+                    </div>
                   </div>
-                  
-                  {/* School Admin Section */}
-                  <div className="mt-4 pt-4 border-t">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">School Admin</p>
-                        {school.stats.school_admin ? (
-                          <div className="mt-2 flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
-                              <User className="h-4 w-4 text-blue-600" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium">{school.stats.school_admin.full_name}</p>
-                              <p className="text-xs text-gray-500">{school.stats.school_admin.email}</p>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-yellow-600 mt-2">No admin assigned</p>
-                        )}
-                      </div>
-                      {!school.stats.school_admin && (
-                        <Button 
-                          size="sm"
-                          onClick={() => router.push(`/dashboard/schools/${school.id}/assign-admin`)}
-                        >
-                          Assign Admin
-                        </Button>
-                      )}
+                  <div className="flex items-center gap-6">
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-gray-900">
+                        {school.stats.students}
+                      </p>
+                      <p className="text-xs text-gray-500">Students</p>
                     </div>
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-gray-900">
+                        {school.stats.teachers}
+                      </p>
+                      <p className="text-xs text-gray-500">Teachers</p>
+                    </div>
+                    <Badge 
+                      className={
+                        school.status === 'active' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-red-100 text-red-800'
+                      }
+                    >
+                      {school.status}
+                    </Badge>
                   </div>
                 </div>
               ))}

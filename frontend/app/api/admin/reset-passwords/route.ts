@@ -1,119 +1,74 @@
-import { createClient } from '@supabase/supabase-js'
+// app/api/admin/reset-password/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-)
-
-interface ResetResult {
-  email: string
-  username?: string
-  role?: string
-  success: boolean
-  error?: string
-}
+import { createClient } from '@supabase/supabase-js'
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('Starting password reset for all users based on role...')
+    const body = await request.json()
+    const { user_id, password } = body
 
-    // Get all profiles with their roles
-    const { data: profiles, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('id, email, username, role')
+    console.log('🔐 Resetting password for user:', user_id)
 
-    if (profileError) {
-      return NextResponse.json(
-        { error: `Failed to fetch profiles: ${profileError.message}` },
-        { status: 500 }
-      )
+    // Validate required fields
+    if (!user_id || !password) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Missing required fields: user_id, password' 
+      }, { status: 400 })
     }
 
-    console.log(`Found ${profiles?.length || 0} profiles to reset`)
-
-    if (!profiles || profiles.length === 0) {
-      return NextResponse.json(
-        { error: 'No profiles found' },
-        { status: 400 }
-      )
+    // Validate environment variables
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('❌ Environment variables not configured')
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Server configuration error' 
+      }, { status: 500 })
     }
 
-    const results: ResetResult[] = []
-
-    // Reset each user's password based on their role
-    for (const profile of profiles) {
-      let password = 'Test123456!' // default
-
-      // Determine password based on role
-      switch (profile.role) {
-        case 'teacher':
-          password = 'Teacher123!'
-          break
-        case 'student':
-          password = 'Student123!'
-          break
-        case 'school_admin':
-        case 'super_admin':
-          password = 'Admin123!'
-          break
-        case 'parent':
-          password = 'Parent123!'
-          break
+    // Create admin client with service role key
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
       }
-
-      try {
-        // Use the profile ID (which matches auth.users.id) to reset password
-        await supabaseAdmin.auth.admin.updateUserById(profile.id, {
-          password,
-          email_confirm: true,
-        })
-
-        results.push({
-          email: profile.email || 'unknown',
-          username: profile.username,
-          role: profile.role,
-          success: true,
-        })
-
-        console.log(`✓ Reset password for ${profile.email} (${profile.role})`)
-      } catch (err: any) {
-        results.push({
-          email: profile.email || 'unknown',
-          username: profile.username,
-          role: profile.role,
-          success: false,
-          error: err.message,
-        })
-
-        console.error(`✗ Failed to reset password for ${profile.email}:`, err.message)
-      }
-    }
-
-    const successCount = results.filter((r) => r.success).length
-    const failureCount = results.filter((r) => !r.success).length
-
-    console.log(`Password reset complete: ${successCount} successful, ${failureCount} failed`)
-
-    return NextResponse.json({
-      success: true,
-      total: results.length,
-      successCount,
-      failureCount,
-      results,
-      message: `Reset ${successCount} of ${results.length} account passwords`,
-    })
-  } catch (error: any) {
-    console.error('Unexpected error:', error)
-    return NextResponse.json(
-      { error: `Unexpected error: ${error.message}` },
-      { status: 500 }
     )
+
+    console.log('🔐 Updating user password...')
+
+    // Update user password
+    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
+      user_id,
+      { password: password }
+    )
+
+    if (error) {
+      console.error('❌ Password reset error:', error)
+      return NextResponse.json({ 
+        success: false, 
+        error: error.message || 'Failed to reset password',
+        details: error
+      }, { status: 400 })
+    }
+
+    console.log('✅ Password reset successfully for user:', data.user.id)
+
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Password reset successfully',
+      data: { user_id: data.user.id }
+    })
+
+  } catch (error: any) {
+    console.error('❌ Password reset error:', error)
+    return NextResponse.json({ 
+      success: false, 
+      error: error.message || 'Internal server error',
+      details: error.toString()
+    }, { status: 500 })
   }
 }
