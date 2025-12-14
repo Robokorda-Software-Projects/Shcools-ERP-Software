@@ -116,7 +116,50 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    font-size: 14px; /* Reduced from default 16px for more compact UI */
+  }
   body {
     @apply bg-background text-foreground;
+  }
+  /* Responsive font size adjustments */
+  @media (min-width: 1920px) {
+    html {
+      font-size: 15px; /* Slightly larger on very big screens */
+    }
+  }
+  @media (max-width: 768px) {
+    html {
+      font-size: 14px; /* Keep compact on tablets */
+    }
+  }
+  @media (max-width: 480px) {
+    html {
+      font-size: 15px; /* Slightly larger on mobile for touch */
+    }
+  }
+}
+
+/* Compact UI adjustments */
+@layer components {
+  /* More compact buttons */
+  button {
+    font-size: 0.875rem;
+  }
+  
+  /* More compact inputs */
+  input, select, textarea {
+    font-size: 0.875rem;
+  }
+  
+  /* Compact table cells */
+  td, th {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  
+  /* Compact cards */
+  .card-compact {
+    padding: 0.75rem;
   }
 }

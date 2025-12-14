@@ -876,7 +876,7 @@ const handleAssignAdmin = async (e: React.FormEvent) => {
             username: adminData.username,
             password: adminPassword,
             loginUrl: `${window.location.origin}/login`,
-            supportEmail: 'onboarding@resend.dev'
+            supportEmail: 'support@robokorda.dev'
           }
         })
       })
@@ -907,7 +907,7 @@ const handleAssignAdmin = async (e: React.FormEvent) => {
               adminName: adminData.full_name,
               adminEmail: adminData.email,
               adminPhone: adminData.phone_number,
-              supportEmail: 'onboarding@resend.dev'
+              supportEmail: 'support@robokorda.dev'
             }
           })
         })
@@ -946,7 +946,7 @@ const handleAssignAdmin = async (e: React.FormEvent) => {
             schoolName: schoolData.name,
             schoolCode: schoolData.school_code,
             loginUrl: `${window.location.origin}/login`,
-            supportEmail: 'onboarding@resend.dev'
+            supportEmail: 'support@robokorda.dev'
           }
         })
       })
