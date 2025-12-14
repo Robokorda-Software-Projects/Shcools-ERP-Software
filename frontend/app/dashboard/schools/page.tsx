@@ -6,7 +6,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
 import { Button } from '@/components/ui/button'
@@ -56,7 +56,13 @@ import {
   AlertCircle,
   CheckCircle,
   Mail as MailIcon,
-  ShieldAlert
+  ShieldAlert,
+  DollarSign,
+  Clock,
+  Award,
+  FileText,
+  Layers,
+  X
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -137,9 +143,61 @@ interface EditAdminForm {
   account_status: string
 }
 
+interface TeacherDetails {
+  id: string
+  full_name: string
+  email: string
+  phone_number: string | null
+  account_status: string
+  subjects: { id: string; name: string; code: string }[]
+}
+
+interface ClassDetails {
+  id: string
+  name: string
+  grade_level: string
+  academic_year: string
+  student_count: number
+  class_teacher: string | null
+}
+
+interface SubjectDetails {
+  id: string
+  name: string
+  code: string
+  department: string | null
+  is_mandatory: boolean
+}
+
+interface StudentDetails {
+  id: string
+  full_name: string
+  admission_number: string
+  gender: string
+  class_name: string | null
+  guardian_name: string | null
+  guardian_phone: string | null
+}
+
+interface SchoolFullDetails extends SchoolWithStats {
+  teachers: TeacherDetails[]
+  classes: ClassDetails[]
+  subjects: SubjectDetails[]
+  students: StudentDetails[]
+  finances: {
+    subscription_fee: number
+    amount_paid: number
+    balance_due: number
+    last_payment_date: string | null
+    next_payment_due: string | null
+    payment_status: 'paid' | 'partial' | 'overdue' | 'pending'
+  }
+}
+
 export default function SchoolsPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [schools, setSchools] = useState<SchoolWithStats[]>([])
   const [loading, setLoading] = useState(true)
   
@@ -147,7 +205,10 @@ export default function SchoolsPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [adminDialogOpen, setAdminDialogOpen] = useState(false)
+  const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [selectedSchool, setSelectedSchool] = useState<SchoolWithStats | null>(null)
+  const [viewSchoolDetails, setViewSchoolDetails] = useState<SchoolFullDetails | null>(null)
+  const [loadingDetails, setLoadingDetails] = useState(false)
   
   // Forms state
   const [createFormData, setCreateFormData] = useState<CreateSchoolForm>({
@@ -196,6 +257,16 @@ export default function SchoolsPage() {
       router.push('/dashboard')
     }
   }, [user, profile, authLoading, router])
+
+  // Handle URL params for opening create dialog
+  useEffect(() => {
+    const action = searchParams.get('action')
+    if (action === 'create' && profile?.role === 'super_admin') {
+      setCreateDialogOpen(true)
+      // Clear the URL param after opening
+      router.replace('/dashboard/schools')
+    }
+  }, [searchParams, profile, router])
 
   useEffect(() => {
     if (profile?.role === 'super_admin') {
@@ -271,6 +342,187 @@ export default function SchoolsPage() {
       toast.error('Failed to load schools')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Load comprehensive school details for view dialog
+  const loadSchoolDetails = async (school: SchoolWithStats) => {
+    try {
+      setLoadingDetails(true)
+      setSelectedSchool(school)
+      setViewDialogOpen(true)
+
+      // Get teachers with their subjects
+      const { data: teachersData } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          full_name,
+          email,
+          phone_number,
+          account_status,
+          teacher_subjects (
+            subjects (
+              id,
+              name,
+              code
+            )
+          )
+        `)
+        .eq('school_id', school.id)
+        .eq('role', 'teacher')
+
+      const teachers: TeacherDetails[] = (teachersData || []).map((t: any) => ({
+        id: t.id,
+        full_name: t.full_name,
+        email: t.email,
+        phone_number: t.phone_number,
+        account_status: t.account_status,
+        subjects: t.teacher_subjects?.map((ts: any) => ts.subjects).filter(Boolean) || []
+      }))
+
+      // Get classes with student count and class teacher
+      const { data: classesData } = await supabase
+        .from('classes')
+        .select(`
+          id,
+          name,
+          grade_level,
+          academic_year,
+          class_teacher_id,
+          profiles!classes_class_teacher_id_fkey (
+            full_name
+          )
+        `)
+        .eq('school_id', school.id)
+
+      const classesWithCounts = await Promise.all(
+        (classesData || []).map(async (cls: any) => {
+          const { count } = await supabase
+            .from('student_classes')
+            .select('*', { count: 'exact', head: true })
+            .eq('class_id', cls.id)
+
+          return {
+            id: cls.id,
+            name: cls.name,
+            grade_level: cls.grade_level,
+            academic_year: cls.academic_year,
+            student_count: count || 0,
+            class_teacher: cls.profiles?.full_name || null
+          }
+        })
+      )
+
+      // Get subjects
+      const { data: subjectsData } = await supabase
+        .from('subjects')
+        .select('id, name, code, department, is_mandatory')
+        .eq('school_id', school.id)
+
+      const subjects: SubjectDetails[] = (subjectsData || []).map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        department: s.department,
+        is_mandatory: s.is_mandatory
+      }))
+
+      // Get students with class and guardian info
+      const { data: studentsData, error: studentsError } = await supabase
+        .from('students')
+        .select(`
+          id,
+          full_name,
+          admission_number,
+          gender,
+          guardian_name,
+          guardian_phone,
+          student_status
+        `)
+        .eq('school_id', school.id)
+        .limit(100) // Limit for performance
+
+      console.log('Students query result:', { count: studentsData?.length, error: studentsError, sample: studentsData?.[0] })
+
+      const students: StudentDetails[] = (studentsData || []).map((s: any) => ({
+        id: s.id,
+        full_name: s.full_name,
+        admission_number: s.admission_number,
+        gender: s.gender,
+        class_name: null, // Will load separately if needed
+        guardian_name: s.guardian_name,
+        guardian_phone: s.guardian_phone
+      }))
+
+      // Get Robokorda subscription/payment data for this school
+      let finances = {
+        subscription_fee: 0,
+        amount_paid: 0,
+        balance_due: 0,
+        last_payment_date: null as string | null,
+        next_payment_due: null as string | null,
+        payment_status: 'pending' as 'paid' | 'partial' | 'overdue' | 'pending'
+      }
+
+      try {
+        // Check for school_subscriptions table (Robokorda payments)
+        const { data: subscriptionData } = await supabase
+          .from('school_subscriptions')
+          .select('*')
+          .eq('school_id', school.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (subscriptionData) {
+          finances = {
+            subscription_fee: subscriptionData.subscription_fee || 0,
+            amount_paid: subscriptionData.amount_paid || 0,
+            balance_due: (subscriptionData.subscription_fee || 0) - (subscriptionData.amount_paid || 0),
+            last_payment_date: subscriptionData.last_payment_date,
+            next_payment_due: subscriptionData.next_payment_due,
+            payment_status: subscriptionData.payment_status || 'pending'
+          }
+        } else {
+          // Calculate based on subscription tier if no payment records
+          const tierPrices: { [key: string]: number } = {
+            'basic': 99,
+            'standard': 199,
+            'premium': 399,
+            'enterprise': 999
+          }
+          finances.subscription_fee = tierPrices[school.subscription_tier || 'basic'] || 99
+          finances.balance_due = finances.subscription_fee
+        }
+      } catch (e) {
+        // Subscription table might not exist yet
+        console.log('School subscriptions table not available')
+        // Set default based on tier
+        const tierPrices: { [key: string]: number } = {
+          'basic': 99,
+          'standard': 199,
+          'premium': 399,
+          'enterprise': 999
+        }
+        finances.subscription_fee = tierPrices[school.subscription_tier || 'basic'] || 99
+        finances.balance_due = finances.subscription_fee
+      }
+
+      setViewSchoolDetails({
+        ...school,
+        teachers,
+        classes: classesWithCounts,
+        subjects,
+        students,
+        finances
+      })
+
+    } catch (error: any) {
+      console.error('Error loading school details:', error)
+      toast.error('Failed to load school details')
+    } finally {
+      setLoadingDetails(false)
     }
   }
 
@@ -718,47 +970,25 @@ const handleAssignAdmin = async (e: React.FormEvent) => {
 
 // Fix 1: Update handleDeleteSchool to handle foreign key constraints
 const handleDeleteSchool = async (schoolId: string, schoolName: string) => {
-  if (!confirm(`Are you sure you want to delete ${schoolName}? This will also delete all related data (students, teachers, classes, etc.). This action cannot be undone.`)) {
+  if (!confirm(`Are you sure you want to delete ${schoolName}? This will also delete all related data (students, teachers, classes, admins, etc.). This action cannot be undone.`)) {
     return
   }
 
   try {
     setLoading(true)
     
-    // First, delete or nullify all foreign key references
-    // Delete students
-    const { error: studentsError } = await supabase
-      .from('students')
-      .delete()
-      .eq('school_id', schoolId)
+    // Delete in correct order to respect foreign key constraints
     
-    if (studentsError) console.warn('Error deleting students:', studentsError)
-
-    // Delete classes
-    const { error: classesError } = await supabase
-      .from('classes')
-      .delete()
-      .eq('school_id', schoolId)
-    
-    if (classesError) console.warn('Error deleting classes:', classesError)
-
-    // Delete subjects
-    const { error: subjectsError } = await supabase
-      .from('subjects')
-      .delete()
-      .eq('school_id', schoolId)
-    
-    if (subjectsError) console.warn('Error deleting subjects:', subjectsError)
-
-    // Update profiles to remove school_id (don't delete users, just unlink them)
-    const { error: profilesError } = await supabase
+    // 0. First, get all users (profiles) linked to this school so we can delete their auth accounts
+    const { data: schoolProfiles } = await supabase
       .from('profiles')
-      .update({ school_id: null, updated_at: new Date().toISOString() })
+      .select('id, role')
       .eq('school_id', schoolId)
+      .neq('role', 'super_admin')  // Never delete super_admin
     
-    if (profilesError) console.warn('Error updating profiles:', profilesError)
+    console.log('Profiles to delete:', schoolProfiles)
 
-    // Delete audit logs
+    // 1. Delete audit logs (references school_id)
     const { error: auditError } = await supabase
       .from('system_audit_log')
       .delete()
@@ -766,7 +996,61 @@ const handleDeleteSchool = async (schoolId: string, schoolName: string) => {
     
     if (auditError) console.warn('Error deleting audit logs:', auditError)
 
-    // Finally, delete the school
+    // 2. Delete students
+    const { error: studentsError } = await supabase
+      .from('students')
+      .delete()
+      .eq('school_id', schoolId)
+    
+    if (studentsError) console.warn('Error deleting students:', studentsError)
+
+    // 3. Delete classes
+    const { error: classesError } = await supabase
+      .from('classes')
+      .delete()
+      .eq('school_id', schoolId)
+    
+    if (classesError) console.warn('Error deleting classes:', classesError)
+
+    // 4. Delete subjects
+    const { error: subjectsError } = await supabase
+      .from('subjects')
+      .delete()
+      .eq('school_id', schoolId)
+    
+    if (subjectsError) console.warn('Error deleting subjects:', subjectsError)
+
+    // 5. Delete profiles linked to this school (except super_admin)
+    const { error: profilesDeleteError } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('school_id', schoolId)
+      .neq('role', 'super_admin')
+    
+    if (profilesDeleteError) console.warn('Error deleting profiles:', profilesDeleteError)
+
+    // 6. Delete auth users for the profiles we found
+    if (schoolProfiles && schoolProfiles.length > 0) {
+      for (const profile of schoolProfiles) {
+        try {
+          const response = await fetch('/api/admin/delete-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: profile.id })
+          })
+          const result = await response.json()
+          if (!response.ok) {
+            console.warn('Failed to delete auth user:', profile.id, result)
+          } else {
+            console.log('✅ Deleted auth user:', profile.id)
+          }
+        } catch (err) {
+          console.warn('Error deleting auth user:', profile.id, err)
+        }
+      }
+    }
+
+    // 7. Finally, delete the school
     const { error: schoolError } = await supabase
       .from('schools')
       .delete()
@@ -774,7 +1058,7 @@ const handleDeleteSchool = async (schoolId: string, schoolName: string) => {
 
     if (schoolError) throw schoolError
 
-    toast.success('School deleted successfully')
+    toast.success('School and all related users deleted successfully')
     loadSchools()
   } catch (error: any) {
     console.error('Error deleting school:', error)
@@ -1482,7 +1766,8 @@ const handleResendCredentials = async (school: SchoolWithStats) => {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => router.push(`/dashboard/schools/${school.id}`)}
+                            onClick={() => loadSchoolDetails(school)}
+                            title="View School Details"
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
@@ -1819,6 +2104,753 @@ const handleResendCredentials = async (school: SchoolWithStats) => {
                   }
                 </Button>
               </form>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Comprehensive School View Dialog */}
+        <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+          <DialogContent className="w-[95vw] max-w-[1400px] max-h-[95vh] overflow-hidden p-0" showCloseButton={false}>
+            <DialogTitle className="sr-only">
+              {viewSchoolDetails?.name || 'School'} Details
+            </DialogTitle>
+            {loadingDetails ? (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-blue-600 border-r-transparent"></div>
+                  <p className="mt-4 text-gray-600">Loading school details...</p>
+                </div>
+              </div>
+            ) : viewSchoolDetails ? (
+              <div className="flex flex-col h-[90vh]">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-purple-700 text-white p-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-20 w-20 border-4 border-white/30">
+                        <AvatarImage src={viewSchoolDetails.logo_url || ''} />
+                        <AvatarFallback className="bg-white/20 text-white text-2xl">
+                          {viewSchoolDetails.name.substring(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h1 className="text-2xl font-bold">{viewSchoolDetails.name}</h1>
+                        <div className="flex items-center gap-3 mt-1">
+                          <Badge variant="secondary" className="bg-white/20 text-white border-0">
+                            {viewSchoolDetails.school_code}
+                          </Badge>
+                          <Badge 
+                            className={
+                              viewSchoolDetails.status === 'active' 
+                                ? 'bg-green-500 text-white border-0' 
+                                : 'bg-yellow-500 text-white border-0'
+                            }
+                          >
+                            {viewSchoolDetails.status}
+                          </Badge>
+                          <Badge variant="secondary" className="bg-white/20 text-white border-0">
+                            {viewSchoolDetails.school_type}
+                          </Badge>
+                        </div>
+                        {viewSchoolDetails.school_motto && (
+                          <p className="text-blue-100 mt-2 italic">"{viewSchoolDetails.school_motto}"</p>
+                        )}
+                      </div>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => setViewDialogOpen(false)}
+                      className="text-white hover:bg-white/20"
+                    >
+                      <X className="h-5 w-5" />
+                    </Button>
+                  </div>
+                  
+                  {/* Quick Stats Row */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+                    <div className="bg-white/10 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold">{viewSchoolDetails.stats.total_students}</div>
+                      <div className="text-xs text-blue-100">Students</div>
+                    </div>
+                    <div className="bg-white/10 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold">{viewSchoolDetails.stats.total_teachers}</div>
+                      <div className="text-xs text-blue-100">Teachers</div>
+                    </div>
+                    <div className="bg-white/10 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold">{viewSchoolDetails.stats.total_classes}</div>
+                      <div className="text-xs text-blue-100">Classes</div>
+                    </div>
+                    <div className="bg-white/10 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold">{viewSchoolDetails.stats.total_subjects}</div>
+                      <div className="text-xs text-blue-100">Subjects</div>
+                    </div>
+                    <div className="bg-white/10 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold">
+                        {viewSchoolDetails.established_year || 'N/A'}
+                      </div>
+                      <div className="text-xs text-blue-100">Established</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Content with Tabs */}
+                <div className="flex-1 overflow-y-auto p-6">
+                  <Tabs defaultValue="overview" className="w-full">
+                    <TabsList className="grid w-full grid-cols-6 mb-6">
+                      <TabsTrigger value="overview">Overview</TabsTrigger>
+                      <TabsTrigger value="admin">Admin</TabsTrigger>
+                      <TabsTrigger value="teachers">Teachers</TabsTrigger>
+                      <TabsTrigger value="students">Students</TabsTrigger>
+                      <TabsTrigger value="classes">Classes</TabsTrigger>
+                      <TabsTrigger value="finances">Finances</TabsTrigger>
+                    </TabsList>
+
+                    {/* Overview Tab */}
+                    <TabsContent value="overview" className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* School Info Card */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <Building2 className="h-5 w-5" />
+                              School Information
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <div className="flex items-start gap-3">
+                              <MapPin className="h-4 w-4 text-gray-400 mt-1" />
+                              <div>
+                                <p className="text-sm font-medium">Address</p>
+                                <p className="text-sm text-gray-600">{viewSchoolDetails.address || 'Not specified'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <Phone className="h-4 w-4 text-gray-400 mt-1" />
+                              <div>
+                                <p className="text-sm font-medium">Phone</p>
+                                <p className="text-sm text-gray-600">{viewSchoolDetails.phone || 'Not specified'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <Mail className="h-4 w-4 text-gray-400 mt-1" />
+                              <div>
+                                <p className="text-sm font-medium">Email</p>
+                                <p className="text-sm text-gray-600">{viewSchoolDetails.contact_email || 'Not specified'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <FileText className="h-4 w-4 text-gray-400 mt-1" />
+                              <div>
+                                <p className="text-sm font-medium">Registration Number</p>
+                                <p className="text-sm text-gray-600">{viewSchoolDetails.registration_number || 'Not specified'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <BookOpen className="h-4 w-4 text-gray-400 mt-1" />
+                              <div>
+                                <p className="text-sm font-medium">Curriculum</p>
+                                <p className="text-sm text-gray-600">{viewSchoolDetails.curriculum || 'Not specified'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <Calendar className="h-4 w-4 text-gray-400 mt-1" />
+                              <div>
+                                <p className="text-sm font-medium">Added to System</p>
+                                <p className="text-sm text-gray-600">
+                                  {new Date(viewSchoolDetails.created_at).toLocaleDateString('en-US', {
+                                    weekday: 'long',
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric'
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Principal Info Card */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <Award className="h-5 w-5" />
+                              Principal Information
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <div className="flex items-center gap-4">
+                              <Avatar className="h-16 w-16">
+                                <AvatarFallback className="bg-purple-100 text-purple-700">
+                                  {viewSchoolDetails.principal_name?.substring(0, 2).toUpperCase() || 'PR'}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="font-semibold text-lg">{viewSchoolDetails.principal_name || 'Not assigned'}</p>
+                                <p className="text-sm text-gray-500">School Principal</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <Mail className="h-4 w-4 text-gray-400 mt-1" />
+                              <div>
+                                <p className="text-sm font-medium">Email</p>
+                                <p className="text-sm text-gray-600">{viewSchoolDetails.principal_email || 'Not specified'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <Phone className="h-4 w-4 text-gray-400 mt-1" />
+                              <div>
+                                <p className="text-sm font-medium">Phone</p>
+                                <p className="text-sm text-gray-600">{viewSchoolDetails.principal_phone || 'Not specified'}</p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Student Demographics */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <GraduationCap className="h-5 w-5" />
+                              Student Demographics
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="grid grid-cols-3 gap-4">
+                              <div className="text-center p-4 bg-blue-50 rounded-lg">
+                                <div className="text-3xl font-bold text-blue-700">{viewSchoolDetails.stats.total_students}</div>
+                                <div className="text-sm text-gray-600">Total</div>
+                              </div>
+                              <div className="text-center p-4 bg-sky-50 rounded-lg">
+                                <div className="text-3xl font-bold text-sky-700">{viewSchoolDetails.stats.male_students}</div>
+                                <div className="text-sm text-gray-600">Male</div>
+                              </div>
+                              <div className="text-center p-4 bg-pink-50 rounded-lg">
+                                <div className="text-3xl font-bold text-pink-700">{viewSchoolDetails.stats.female_students}</div>
+                                <div className="text-sm text-gray-600">Female</div>
+                              </div>
+                            </div>
+                            <div className="mt-4">
+                              <div className="flex justify-between text-sm mb-1">
+                                <span>Capacity Utilization</span>
+                                <span>{viewSchoolDetails.total_capacity ? Math.round((viewSchoolDetails.stats.total_students / viewSchoolDetails.total_capacity) * 100) : 0}%</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-blue-600 h-2 rounded-full" 
+                                  style={{ width: `${viewSchoolDetails.total_capacity ? Math.min((viewSchoolDetails.stats.total_students / viewSchoolDetails.total_capacity) * 100, 100) : 0}%` }}
+                                ></div>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {viewSchoolDetails.stats.total_students} of {viewSchoolDetails.total_capacity || 0} capacity
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Subscription Info */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <Layers className="h-5 w-5" />
+                              Subscription
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-600">Tier</span>
+                              <Badge className="capitalize">{viewSchoolDetails.subscription_tier || 'basic'}</Badge>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-600">Expires</span>
+                              <span className="text-sm font-medium">
+                                {viewSchoolDetails.subscription_expires_at 
+                                  ? new Date(viewSchoolDetails.subscription_expires_at).toLocaleDateString()
+                                  : 'Never'
+                                }
+                              </span>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </TabsContent>
+
+                    {/* Admin Tab */}
+                    <TabsContent value="admin">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <UserCog className="h-5 w-5" />
+                            School Administrator
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {viewSchoolDetails.stats.school_admin ? (
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-4">
+                                <Avatar className="h-20 w-20">
+                                  <AvatarFallback className="bg-green-100 text-green-700 text-xl">
+                                    {viewSchoolDetails.stats.school_admin.full_name.substring(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <p className="font-semibold text-xl">{viewSchoolDetails.stats.school_admin.full_name}</p>
+                                  <Badge 
+                                    className={
+                                      viewSchoolDetails.stats.school_admin.account_status === 'active'
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-yellow-100 text-yellow-800'
+                                    }
+                                  >
+                                    {viewSchoolDetails.stats.school_admin.account_status}
+                                  </Badge>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                                  <User className="h-4 w-4 text-gray-400 mt-1" />
+                                  <div>
+                                    <p className="text-sm font-medium">Username</p>
+                                    <p className="text-sm text-gray-600">{viewSchoolDetails.stats.school_admin.username}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                                  <Mail className="h-4 w-4 text-gray-400 mt-1" />
+                                  <div>
+                                    <p className="text-sm font-medium">Email</p>
+                                    <p className="text-sm text-gray-600">{viewSchoolDetails.stats.school_admin.email}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                                  <Phone className="h-4 w-4 text-gray-400 mt-1" />
+                                  <div>
+                                    <p className="text-sm font-medium">Phone</p>
+                                    <p className="text-sm text-gray-600">{viewSchoolDetails.stats.school_admin.phone_number || 'Not specified'}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                                  <Clock className="h-4 w-4 text-gray-400 mt-1" />
+                                  <div>
+                                    <p className="text-sm font-medium">Last Login</p>
+                                    <p className="text-sm text-gray-600">
+                                      {viewSchoolDetails.stats.school_admin.last_login_at 
+                                        ? new Date(viewSchoolDetails.stats.school_admin.last_login_at).toLocaleString()
+                                        : 'Never'
+                                      }
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-center py-8">
+                              <UserCog className="h-12 w-12 mx-auto text-gray-400" />
+                              <p className="mt-4 text-gray-500">No admin assigned to this school</p>
+                              <Button 
+                                className="mt-4" 
+                                onClick={() => {
+                                  setViewDialogOpen(false)
+                                  openAdminDialog(viewSchoolDetails)
+                                }}
+                              >
+                                Assign Admin
+                              </Button>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+
+                    {/* Teachers Tab */}
+                    <TabsContent value="teachers">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center justify-between">
+                            <span className="flex items-center gap-2">
+                              <Users className="h-5 w-5" />
+                              Teachers ({viewSchoolDetails.teachers.length})
+                            </span>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {viewSchoolDetails.teachers.length > 0 ? (
+                            <div className="overflow-x-auto">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Name</TableHead>
+                                    <TableHead>Email</TableHead>
+                                    <TableHead>Phone</TableHead>
+                                    <TableHead>Subjects</TableHead>
+                                    <TableHead>Status</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {viewSchoolDetails.teachers.map((teacher) => (
+                                    <TableRow key={teacher.id}>
+                                      <TableCell className="font-medium">{teacher.full_name}</TableCell>
+                                      <TableCell>{teacher.email}</TableCell>
+                                      <TableCell>{teacher.phone_number || '-'}</TableCell>
+                                      <TableCell>
+                                        <div className="flex flex-wrap gap-1">
+                                          {teacher.subjects.length > 0 ? (
+                                            teacher.subjects.slice(0, 3).map((subject) => (
+                                              <Badge key={subject.id} variant="secondary" className="text-xs">
+                                                {subject.name}
+                                              </Badge>
+                                            ))
+                                          ) : (
+                                            <span className="text-gray-400 text-sm">No subjects</span>
+                                          )}
+                                          {teacher.subjects.length > 3 && (
+                                            <Badge variant="secondary" className="text-xs">
+                                              +{teacher.subjects.length - 3}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge 
+                                          className={
+                                            teacher.account_status === 'active'
+                                              ? 'bg-green-100 text-green-800'
+                                              : 'bg-yellow-100 text-yellow-800'
+                                          }
+                                        >
+                                          {teacher.account_status}
+                                        </Badge>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          ) : (
+                            <div className="text-center py-8">
+                              <Users className="h-12 w-12 mx-auto text-gray-400" />
+                              <p className="mt-4 text-gray-500">No teachers registered at this school</p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+
+                    {/* Students Tab */}
+                    <TabsContent value="students">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center justify-between">
+                            <span className="flex items-center gap-2">
+                              <GraduationCap className="h-5 w-5" />
+                              Students ({viewSchoolDetails.stats.total_students})
+                            </span>
+                          </CardTitle>
+                          <CardDescription>
+                            Showing first 100 students
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {viewSchoolDetails.students.length > 0 ? (
+                            <div className="overflow-x-auto">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Name</TableHead>
+                                    <TableHead>Admission #</TableHead>
+                                    <TableHead>Gender</TableHead>
+                                    <TableHead>Class</TableHead>
+                                    <TableHead>Guardian</TableHead>
+                                    <TableHead>Guardian Phone</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {viewSchoolDetails.students.map((student) => (
+                                    <TableRow key={student.id}>
+                                      <TableCell className="font-medium">{student.full_name}</TableCell>
+                                      <TableCell>{student.admission_number}</TableCell>
+                                      <TableCell>
+                                        <Badge variant="secondary">
+                                          {student.gender === 'Male' ? '♂️' : '♀️'} {student.gender}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell>{student.class_name || '-'}</TableCell>
+                                      <TableCell>{student.guardian_name || '-'}</TableCell>
+                                      <TableCell>{student.guardian_phone || '-'}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          ) : (
+                            <div className="text-center py-8">
+                              <GraduationCap className="h-12 w-12 mx-auto text-gray-400" />
+                              <p className="mt-4 text-gray-500">No students enrolled at this school</p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+
+                    {/* Classes Tab */}
+                    <TabsContent value="classes">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Classes */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <Layers className="h-5 w-5" />
+                              Classes ({viewSchoolDetails.classes.length})
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            {viewSchoolDetails.classes.length > 0 ? (
+                              <div className="space-y-3">
+                                {viewSchoolDetails.classes.map((cls) => (
+                                  <div key={cls.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                    <div>
+                                      <p className="font-medium">{cls.name}</p>
+                                      <p className="text-sm text-gray-500">
+                                        {cls.grade_level} • {cls.academic_year}
+                                      </p>
+                                      {cls.class_teacher && (
+                                        <p className="text-xs text-gray-400">Teacher: {cls.class_teacher}</p>
+                                      )}
+                                    </div>
+                                    <Badge variant="secondary">{cls.student_count} students</Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-center py-8">
+                                <Layers className="h-12 w-12 mx-auto text-gray-400" />
+                                <p className="mt-4 text-gray-500">No classes created</p>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        {/* Subjects */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <BookOpen className="h-5 w-5" />
+                              Subjects ({viewSchoolDetails.subjects.length})
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            {viewSchoolDetails.subjects.length > 0 ? (
+                              <div className="space-y-3">
+                                {viewSchoolDetails.subjects.map((subject) => (
+                                  <div key={subject.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                    <div>
+                                      <p className="font-medium">{subject.name}</p>
+                                      <p className="text-sm text-gray-500">
+                                        Code: {subject.code}
+                                        {subject.department && ` • ${subject.department}`}
+                                      </p>
+                                    </div>
+                                    {subject.is_mandatory && (
+                                      <Badge className="bg-blue-100 text-blue-800">Mandatory</Badge>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-center py-8">
+                                <BookOpen className="h-12 w-12 mx-auto text-gray-400" />
+                                <p className="mt-4 text-gray-500">No subjects created</p>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </TabsContent>
+
+                    {/* Finances Tab */}
+                    <TabsContent value="finances">
+                      <div className="space-y-6">
+                        {/* Robokorda Subscription Header */}
+                        <Card className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
+                          <CardContent className="pt-6">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h3 className="text-lg font-medium opacity-90">Robokorda ERP Subscription</h3>
+                                <p className="text-3xl font-bold mt-1">
+                                  {viewSchoolDetails.subscription_tier?.toUpperCase() || 'BASIC'} Plan
+                                </p>
+                              </div>
+                              <Badge 
+                                className={
+                                  viewSchoolDetails.finances.payment_status === 'paid' 
+                                    ? 'bg-green-500 text-white border-0 text-lg px-4 py-2'
+                                    : viewSchoolDetails.finances.payment_status === 'partial'
+                                    ? 'bg-yellow-500 text-white border-0 text-lg px-4 py-2'
+                                    : viewSchoolDetails.finances.payment_status === 'overdue'
+                                    ? 'bg-red-500 text-white border-0 text-lg px-4 py-2'
+                                    : 'bg-gray-500 text-white border-0 text-lg px-4 py-2'
+                                }
+                              >
+                                {viewSchoolDetails.finances.payment_status === 'paid' ? '✓ Paid' 
+                                  : viewSchoolDetails.finances.payment_status === 'partial' ? '⚠ Partial'
+                                  : viewSchoolDetails.finances.payment_status === 'overdue' ? '✗ Overdue'
+                                  : '⏳ Pending'}
+                              </Badge>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Payment Details */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <Card>
+                            <CardContent className="pt-6">
+                              <div className="text-center">
+                                <DollarSign className="h-10 w-10 mx-auto text-blue-600" />
+                                <div className="text-3xl font-bold text-blue-700 mt-2">
+                                  ${viewSchoolDetails.finances.subscription_fee.toLocaleString()}
+                                </div>
+                                <div className="text-sm text-gray-600 mt-1">Subscription Fee</div>
+                                <div className="text-xs text-gray-400">per billing period</div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                          
+                          <Card>
+                            <CardContent className="pt-6">
+                              <div className="text-center">
+                                <CheckCircle className="h-10 w-10 mx-auto text-green-600" />
+                                <div className="text-3xl font-bold text-green-700 mt-2">
+                                  ${viewSchoolDetails.finances.amount_paid.toLocaleString()}
+                                </div>
+                                <div className="text-sm text-gray-600 mt-1">Amount Paid</div>
+                                {viewSchoolDetails.finances.last_payment_date && (
+                                  <div className="text-xs text-gray-400">
+                                    Last: {new Date(viewSchoolDetails.finances.last_payment_date).toLocaleDateString()}
+                                  </div>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                          
+                          <Card>
+                            <CardContent className="pt-6">
+                              <div className="text-center">
+                                <AlertCircle className="h-10 w-10 mx-auto text-red-600" />
+                                <div className="text-3xl font-bold text-red-700 mt-2">
+                                  ${viewSchoolDetails.finances.balance_due.toLocaleString()}
+                                </div>
+                                <div className="text-sm text-gray-600 mt-1">Balance Due</div>
+                                {viewSchoolDetails.finances.next_payment_due && (
+                                  <div className="text-xs text-gray-400">
+                                    Due: {new Date(viewSchoolDetails.finances.next_payment_due).toLocaleDateString()}
+                                  </div>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+
+                        {/* Subscription Details */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <FileText className="h-5 w-5" />
+                              Subscription Details
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                              <div className="space-y-4">
+                                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                  <span className="text-gray-600">Subscription Tier</span>
+                                  <Badge className="capitalize">{viewSchoolDetails.subscription_tier || 'basic'}</Badge>
+                                </div>
+                                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                  <span className="text-gray-600">Subscription Status</span>
+                                  <Badge 
+                                    className={
+                                      viewSchoolDetails.status === 'active' 
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-yellow-100 text-yellow-800'
+                                    }
+                                  >
+                                    {viewSchoolDetails.status}
+                                  </Badge>
+                                </div>
+                                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                  <span className="text-gray-600">Expires On</span>
+                                  <span className="font-medium">
+                                    {viewSchoolDetails.subscription_expires_at 
+                                      ? new Date(viewSchoolDetails.subscription_expires_at).toLocaleDateString()
+                                      : 'Never / Lifetime'
+                                    }
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="space-y-4">
+                                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                  <span className="text-gray-600">School Registered</span>
+                                  <span className="font-medium">
+                                    {new Date(viewSchoolDetails.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                  <span className="text-gray-600">Students Enrolled</span>
+                                  <span className="font-medium">{viewSchoolDetails.stats.total_students}</span>
+                                </div>
+                                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                  <span className="text-gray-600">Active Teachers</span>
+                                  <span className="font-medium">{viewSchoolDetails.stats.total_teachers}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Pricing Tiers Reference */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <Layers className="h-5 w-5" />
+                              Robokorda ERP Pricing Tiers
+                            </CardTitle>
+                            <CardDescription>
+                              Upgrade or downgrade based on school needs
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                              <div className={`p-4 rounded-lg border-2 ${viewSchoolDetails.subscription_tier === 'basic' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+                                <div className="font-semibold">Basic</div>
+                                <div className="text-2xl font-bold text-blue-600">$99</div>
+                                <div className="text-xs text-gray-500">per month</div>
+                              </div>
+                              <div className={`p-4 rounded-lg border-2 ${viewSchoolDetails.subscription_tier === 'standard' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+                                <div className="font-semibold">Standard</div>
+                                <div className="text-2xl font-bold text-blue-600">$199</div>
+                                <div className="text-xs text-gray-500">per month</div>
+                              </div>
+                              <div className={`p-4 rounded-lg border-2 ${viewSchoolDetails.subscription_tier === 'premium' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+                                <div className="font-semibold">Premium</div>
+                                <div className="text-2xl font-bold text-blue-600">$399</div>
+                                <div className="text-xs text-gray-500">per month</div>
+                              </div>
+                              <div className={`p-4 rounded-lg border-2 ${viewSchoolDetails.subscription_tier === 'enterprise' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+                                <div className="font-semibold">Enterprise</div>
+                                <div className="text-2xl font-bold text-blue-600">$999</div>
+                                <div className="text-xs text-gray-500">per month</div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-96">
+                <p className="text-gray-500">No school data available</p>
+              </div>
             )}
           </DialogContent>
         </Dialog>

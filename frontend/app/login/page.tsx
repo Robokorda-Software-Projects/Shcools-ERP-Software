@@ -39,11 +39,15 @@ export default function LoginPage() {
 
       // Lookup email from username
       console.log('Looking up username:', username)
+      console.log('Username length:', username.length)
+      console.log('Username trimmed:', username.trim())
+      
+      // Try with ilike for case-insensitive matching
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('email, username')
-        .eq('username', username)
-        .single()
+        .ilike('username', username.trim())
+        .maybeSingle()
 
       console.log('=== PROFILE LOOKUP RESULT ===')
       console.log('profileData:', profileData)
@@ -61,9 +65,16 @@ export default function LoginPage() {
       }
 
       if (!profileData) {
-        console.error('No profile data returned')
+        // If still no data, might be RLS issue - try listing all to debug
+        console.log('No profile found, checking RLS...')
+        const { data: allProfiles, error: allError } = await supabase
+          .from('profiles')
+          .select('username')
+          .limit(5)
+        console.log('RLS check - can read profiles?', { count: allProfiles?.length, error: allError })
+        
         toast.error('Login failed', {
-          description: 'Username not found',
+          description: 'Username not found. Please check your username.',
         })
         setLoading(false)
         return

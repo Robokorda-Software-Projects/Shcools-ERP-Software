@@ -118,6 +118,97 @@ SmartSchools ERP Team
         `
     }
 
+    // Map template names to EmailJS template IDs
+    const templateMap: { [key: string]: string } = {
+      'welcome-admin': process.env.EMAILJS_TEMPLATE_WELCOME_ADMIN || '',
+      'welcome-principal': process.env.EMAILJS_TEMPLATE_WELCOME_PRINCIPAL || '',
+      'admin-assigned': process.env.EMAILJS_TEMPLATE_ADMIN_ASSIGNED || '',
+      'credentials-reset': process.env.EMAILJS_TEMPLATE_CREDENTIALS_RESET || ''
+    }
+
+    const templateId = templateMap[template]
+    
+    if (!templateId) {
+      console.error('❌ Unknown template:', template)
+      return NextResponse.json({ 
+        success: false, 
+        error: `Unknown email template: ${template}`
+      }, { status: 400 })
+    }
+
+    // Validate EmailJS credentials
+    if (!process.env.EMAILJS_SERVICE_ID || !process.env.EMAILJS_PRIVATE_KEY || !process.env.EMAILJS_PUBLIC_KEY) {
+      console.error('❌ EmailJS credentials not configured')
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Email service not configured'
+      }, { status: 500 })
+    }
+
+    // Build template_params based on template type to match EmailJS template variables
+    let templateParams: Record<string, string> = {}
+
+    switch(template) {
+      case 'welcome-admin':
+        // Matches: {{to_email}}, {{adminName}}, {{schoolName}}, {{schoolCode}}, {{username}}, {{password}}, {{loginUrl}}, {{supportEmail}}
+        templateParams = {
+          to_email: to,
+          adminName: data.adminName || '',
+          schoolName: data.schoolName || '',
+          schoolCode: data.schoolCode || '',
+          username: data.username || '',
+          password: data.password || '',
+          loginUrl: data.loginUrl || '',
+          supportEmail: data.supportEmail || 'support@smartschools.com'
+        }
+        break
+
+      case 'welcome-principal':
+        // Matches: {{to_email}}, {{principalName}}, {{schoolName}}, {{schoolCode}}, {{adminName}}, {{adminEmail}}, {{adminPhone}}, {{supportEmail}}
+        templateParams = {
+          to_email: to,
+          principalName: data.principalName || '',
+          schoolName: data.schoolName || '',
+          schoolCode: data.schoolCode || '',
+          adminName: data.adminName || '',
+          adminEmail: data.adminEmail || '',
+          adminPhone: data.adminPhone || '',
+          supportEmail: data.supportEmail || 'support@smartschools.com'
+        }
+        break
+
+      case 'credentials-reset':
+        // Matches: {{to_email}}, {{adminName}}, {{schoolName}}, {{username}}, {{password}}, {{loginUrl}}
+        templateParams = {
+          to_email: to,
+          adminName: data.adminName || '',
+          schoolName: data.schoolName || '',
+          username: data.username || '',
+          password: data.password || '',
+          loginUrl: data.loginUrl || ''
+        }
+        break
+
+      case 'admin-assigned':
+        // Matches: {{to_email}}, {{adminName}}, {{schoolName}}, {{schoolCode}}, {{loginUrl}}, {{supportEmail}}
+        templateParams = {
+          to_email: to,
+          adminName: data.adminName || '',
+          schoolName: data.schoolName || '',
+          schoolCode: data.schoolCode || '',
+          loginUrl: data.loginUrl || '',
+          supportEmail: data.supportEmail || 'support@smartschools.com'
+        }
+        break
+
+      default:
+        templateParams = { ...data, to_email: to }
+    }
+
+    console.log('📧 Sending email with params:', templateParams)
+    console.log('📧 Using service_id:', process.env.EMAILJS_SERVICE_ID)
+    console.log('📧 Using template_id:', templateId)
+
     // Send email using EmailJS
     const emailJSResponse = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
@@ -125,25 +216,25 @@ SmartSchools ERP Team
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        service_id: process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID,
-        template_id: process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID,
-        user_id: process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY,
+        service_id: process.env.EMAILJS_SERVICE_ID,
+        template_id: templateId,
+        user_id: process.env.EMAILJS_PUBLIC_KEY,
         accessToken: process.env.EMAILJS_PRIVATE_KEY,
-        template_params: {
-          to_email: to,
-          to_name: data.adminName || data.principalName || 'User',
-          subject: subject || `SmartSchools ERP - ${template}`,
-          message: emailContent,
-          from_name: 'SmartSchools ERP',
-          reply_to: data.supportEmail || 'support@smartschools.com'
-        }
+        template_params: templateParams
       })
     })
 
+    const responseText = await emailJSResponse.text()
+    console.log('📧 EmailJS response status:', emailJSResponse.status)
+    console.log('📧 EmailJS response:', responseText)
+
     if (!emailJSResponse.ok) {
-      const errorText = await emailJSResponse.text()
-      console.error('❌ EmailJS error:', errorText)
-      throw new Error(`EmailJS failed: ${errorText}`)
+      console.error('❌ EmailJS error:', responseText)
+      return NextResponse.json({ 
+        success: false, 
+        error: `EmailJS failed: ${responseText}`,
+        status: emailJSResponse.status
+      }, { status: 500 })
     }
 
     console.log('✅ Email sent successfully via EmailJS')

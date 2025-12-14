@@ -286,7 +286,7 @@ export default function SuperAdminDashboardPage() {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Link href="/dashboard/schools/create">
+          <Link href="/dashboard/schools?action=create">
             <Card className="hover:shadow-lg transition-all cursor-pointer border-2 border-blue-500 bg-blue-50">
               <CardContent className="pt-6">
                 <div className="flex items-center gap-3">
@@ -436,133 +436,7 @@ export default function SuperAdminDashboardPage() {
           </Card>
         </div>
 
-        {/* Recent Schools */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Recently Added Schools</CardTitle>
-                <CardDescription>Latest schools registered on the platform</CardDescription>
-              </div>
-              <Link href="/dashboard/schools">
-                <Button variant="outline" size="sm">
-                  View All
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentSchools.map((school) => (
-                <div 
-                  key={school.id}
-                  className="p-4 rounded-lg border hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-4">
-                      {school.logo_url ? (
-                        <img 
-                          src={school.logo_url} 
-                          alt={school.name}
-                          className="h-16 w-16 rounded-lg object-cover border"
-                        />
-                      ) : (
-                        <div className="h-16 w-16 rounded-lg bg-blue-100 flex items-center justify-center">
-                          <School className="h-8 w-8 text-blue-600" />
-                        </div>
-                      )}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <p className="font-semibold text-gray-900">{school.name}</p>
-                          <Badge 
-                            className={
-                              school.status === 'active' 
-                                ? 'bg-green-100 text-green-800' 
-                                : school.status === 'suspended'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                            }
-                          >
-                            {school.status}
-                          </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            {school.school_type}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-gray-500 mt-1">
-                          {school.school_code}
-                        </p>
-                        {school.principal_name && (
-                          <p className="text-sm text-gray-600 mt-2">
-                            <User className="h-3 w-3 inline mr-1" />
-                            Principal: {school.principal_name}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-4 mt-3 text-sm">
-                          <div className="text-center">
-                            <p className="font-semibold text-gray-900">
-                              {school.stats.total_students}
-                            </p>
-                            <p className="text-xs text-gray-500">Students</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="font-semibold text-gray-900">
-                              {school.stats.total_classes}
-                            </p>
-                            <p className="text-xs text-gray-500">Classes</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="font-semibold text-gray-900">
-                              {school.stats.total_teachers}
-                            </p>
-                            <p className="text-xs text-gray-500">Teachers</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => router.push(`/dashboard/schools/${school.id}`)}
-                    >
-                      View Details
-                    </Button>
-                  </div>
-                  
-                  {/* School Admin Section */}
-                  <div className="mt-4 pt-4 border-t">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">School Admin</p>
-                        {school.stats.school_admin ? (
-                          <div className="mt-2 flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
-                              <User className="h-4 w-4 text-blue-600" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium">{school.stats.school_admin.full_name}</p>
-                              <p className="text-xs text-gray-500">{school.stats.school_admin.email}</p>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-yellow-600 mt-2">No admin assigned</p>
-                        )}
-                      </div>
-                      {!school.stats.school_admin && (
-                        <Button 
-                          size="sm"
-                          onClick={() => router.push(`/dashboard/schools/${school.id}/assign-admin`)}
-                        >
-                          Assign Admin
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        
 
         {/* System Health */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
