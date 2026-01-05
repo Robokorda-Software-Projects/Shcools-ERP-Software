@@ -342,74 +342,7 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Robokorda Branding Section */}
-        <Card className="bg-gradient-to-r from-gray-900 to-gray-800 text-white">
-          <CardContent className="pt-8 pb-8">
-            <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
-              <div className="flex items-center gap-4">
-                <div className="relative h-20 w-48">
-                  <Image
-                    src="/images/logos/robokorda/logo-white.png"
-                    alt="Robokorda Africa"
-                    fill
-                    className="object-contain"
-                  />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold">Powered by Robokorda Africa</h3>
-                  <p className="text-gray-300 mt-1">
-                    Empowering African Education with cutting-edge technology solutions
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <Button 
-                  variant="outline" 
-                  className="text-white border-white/30 hover:bg-white/10"
-                  onClick={() => window.open('https://www.robokorda.com/', '_blank')}
-                >
-                  <Star className="mr-2 h-4 w-4" />
-                  Visit Website
-                </Button>
-                <Button 
-                  className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
-                  onClick={() => window.open('https://www.robokorda.com/product-details/', '_blank')}
-                >
-                  <Phone className="mr-2 h-4 w-4" />
-                  Contact Support
-                </Button>
-              </div>
-            </div>
-            <div className="mt-6 pt-6 border-t border-gray-700">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div className="text-center">
-                  <div className="h-8 w-8 rounded-full bg-blue-500/20 flex items-center justify-center mx-auto mb-2">
-                    <Shield className="h-4 w-4 text-blue-300" />
-                  </div>
-                  <p className="text-gray-300">Secure & Reliable</p>
-                </div>
-                <div className="text-center">
-                  <div className="h-8 w-8 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-2">
-                    <TrendingUp className="h-4 w-4 text-green-300" />
-                  </div>
-                  <p className="text-gray-300">Performance Focused</p>
-                </div>
-                <div className="text-center">
-                  <div className="h-8 w-8 rounded-full bg-purple-500/20 flex items-center justify-center mx-auto mb-2">
-                    <Globe className="h-4 w-4 text-purple-300" />
-                  </div>
-                  <p className="text-gray-300">Made for Africa</p>
-                </div>
-                <div className="text-center">
-                  <div className="h-8 w-8 rounded-full bg-orange-500/20 flex items-center justify-center mx-auto mb-2">
-                    <Clock className="h-4 w-4 text-orange-300" />
-                  </div>
-                  <p className="text-gray-300">24/7 Support</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        
       </div>
     </DashboardLayout>
   )

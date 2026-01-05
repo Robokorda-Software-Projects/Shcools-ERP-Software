@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Simplified navigation configuration for MVP
 // Only shows: Schools, Classes, Students, Exams, Teacher Assignments, Parent Management, and Grades
 
-import { LayoutDashboard, School, Users, BookOpen, FileText, UserCog, Link2, GraduationCap } from "lucide-react";
+import { LayoutDashboard, School, Users, BookOpen, FileText, UserCog, Link2, GraduationCap, Layers, ClipboardList, CalendarClock, ClipboardCheck, PenTool, UserCheck, Settings, Brain, Calendar, Upload, FolderOpen, Award } from "lucide-react";
 
 export interface NavItem {
   title: string;
@@ -16,7 +17,7 @@ export const navigationItems: NavItem[] = [
     title: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
-    roles: ["super_admin", "school_admin", "teacher", "student", "parent"],
+    roles: ["super_admin", "school_admin", "teacher", "student", "parent", "enrollment_officer"],
     description: "Overview and statistics",
   },
   {
@@ -27,11 +28,39 @@ export const navigationItems: NavItem[] = [
     description: "Manage schools",
   },
   {
-    title: "Classes",
-    href: "/dashboard/classes",
+    title: "AI Settings",
+    href: "/dashboard/super-admin/ai-settings",
+    icon: Brain,
+    roles: ["super_admin"],
+    description: "Configure AI-powered file parsing",
+  },
+  {
+    title: "Forms & Classes",
+    href: "/dashboard/forms-classes",
+    icon: Layers,
+    roles: ["school_admin"],
+    description: "Manage forms and classes",
+  },
+  {
+    title: "Subjects",
+    href: "/dashboard/subjects",
     icon: BookOpen,
-    roles: ["super_admin", "school_admin", "teacher"],
-    description: "Manage classes",
+    roles: ["school_admin"],
+    description: "Manage subjects",
+  },
+  {
+    title: "Staff",
+    href: "/dashboard/staff",
+    icon: UserCog,
+    roles: ["school_admin"],
+    description: "Manage teachers and staff",
+  },
+  {
+    title: "My Classes",
+    href: "/dashboard/classes",
+    icon: ClipboardList,
+    roles: ["teacher"],
+    description: "View my assigned classes",
   },
   {
     title: "Teacher Assignments",
@@ -44,8 +73,29 @@ export const navigationItems: NavItem[] = [
     title: "Students",
     href: "/dashboard/students",
     icon: Users,
-    roles: ["super_admin", "school_admin", "teacher"],
+    roles: ["super_admin", "school_admin", "teacher", "enrollment_officer"],
     description: "Manage students",
+  },
+  {
+    title: "Enroll Student",
+    href: "/dashboard/students/enroll-new",
+    icon: Users,
+    roles: ["enrollment_officer"],
+    description: "Enroll single student with parent",
+  },
+  {
+    title: "Bulk Upload",
+    href: "/dashboard/students/bulk-enroll",
+    icon: Users,
+    roles: ["enrollment_officer", "school_admin"],
+    description: "Upload multiple students via CSV",
+  },
+  {
+    title: "Enrollment Settings",
+    href: "/dashboard/enrollment-settings",
+    icon: Settings,
+    roles: ["school_admin"],
+    description: "Configure enrollment rules",
   },
   {
     title: "Parent Management",
@@ -55,18 +105,88 @@ export const navigationItems: NavItem[] = [
     description: "Manage parents and link to students",
   },
   {
+    title: "Exam Periods",
+    href: "/dashboard/exam-periods",
+    icon: CalendarClock,
+    roles: ["school_admin"],
+    description: "Control exam marking periods",
+  },
+  {
     title: "Exams",
     href: "/dashboard/exams",
     icon: FileText,
-    roles: ["super_admin", "school_admin", "teacher"],
-    description: "Create and grade exams",
+    roles: ["super_admin", "school_admin"],
+    description: "Manage and publish exams",
+  },
+  {
+    title: "Tests",
+    href: "/dashboard/school-admin/tests",
+    icon: ClipboardList,
+    roles: ["school_admin"],
+    description: "View teacher tests and quizzes",
+  },
+  {
+    title: "Documents",
+    href: "/dashboard/school-admin/documents",
+    icon: BookOpen,
+    roles: ["school_admin"],
+    description: "View teacher documents",
+  },
+  {
+    title: "Enter Marks",
+    href: "/dashboard/teacher-exams",
+    icon: ClipboardCheck,
+    roles: ["teacher"],
+    description: "Enter exam marks",
+  },
+  {
+    title: "My Tests",
+    href: "/dashboard/teacher-tests",
+    icon: PenTool,
+    roles: ["teacher"],
+    description: "Create and manage tests",
+  },
+  {
+    title: "Attendance",
+    href: "/dashboard/attendance",
+    icon: UserCheck,
+    roles: ["teacher", "school_admin"],
+    description: "Mark daily attendance",
+  },
+  {
+    title: "My Attendance",
+    href: "/dashboard/student/attendance",
+    icon: Calendar,
+    roles: ["student"],
+    description: "View your attendance record",
+  },
+  {
+    title: "My Assignments",
+    href: "/dashboard/student/assignments",
+    icon: Upload,
+    roles: ["student"],
+    description: "View and submit assignments",
   },
   {
     title: "My Grades",
-    href: "/dashboard/my-grades",
+    href: "/dashboard/student/grades",
     icon: GraduationCap,
     roles: ["student"],
-    description: "View your exam results",
+    description: "View your test results",
+  },
+  {
+    title: "Resources",
+    href: "/dashboard/student/resources",
+    icon: FolderOpen,
+    roles: ["student"],
+    description: "Study materials and notes",
+  },
+  {
+    title: "E-Report",
+    href: "/dashboard/student/ereport",
+    icon: Award,
+    roles: ["student"],
+    description: "View your exam report card",
   },
   {
     title: "Children's Grades",
@@ -74,6 +194,13 @@ export const navigationItems: NavItem[] = [
     icon: GraduationCap,
     roles: ["parent"],
     description: "View your children's grades",
+  },
+  {
+    title: "E-Report Card",
+    href: "/dashboard/student/ereport",
+    icon: Award,
+    roles: ["parent"],
+    description: "View your child's report card",
   },
 ];
 

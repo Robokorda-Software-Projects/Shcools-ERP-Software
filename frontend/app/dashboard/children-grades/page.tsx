@@ -1,4 +1,5 @@
-﻿'use client'
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
+'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -6,12 +7,12 @@ import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { supabase } from '@/lib/supabase'
-import { toast } from 'sonner'
-import { UserCircle, BookOpen, ChevronDown, ChevronUp, GraduationCap, TrendingUp } from 'lucide-react'
+import { UserCircle, BookOpen, ChevronDown, ChevronUp, FileText, Download, Upload, Calendar, TrendingUp } from 'lucide-react'
 
 interface Child {
   id: string
@@ -23,34 +24,48 @@ interface Child {
   section: string
   school_name: string
   average_grade: number | null
-  total_exams: number
+  total_assessments: number
 }
 
 interface Subject {
   subject_id: string
   subject_name: string
-  exam_count: number
+  assessment_count: number
   average_percentage: number | null
-  best_grade: string | null
 }
 
-interface ExamResult {
-  exam_id: string
-  exam_title: string
-  exam_date: string
+interface Assignment {
+  id: string
+  title: string
+  due_date: string
   total_marks: number
-  marks_obtained: number
-  percentage: number
-  grade: string
   subject_name: string
+  assignment_file_url: string | null
+  submission_file_url: string | null
+  submitted_at: string | null
+  marks_obtained: number | null
+  type: 'assignment'
 }
+
+interface TermTest {
+  id: string
+  title: string
+  date: string
+  total_marks: number
+  subject_name: string
+  test_paper_url: string | null
+  marks_obtained: number | null
+  type: 'test'
+}
+
+type Assessment = Assignment | TermTest
 
 export default function ChildrenGradesPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
   const [children, setChildren] = useState<Child[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
-  const [examResults, setExamResults] = useState<ExamResult[]>([])
+  const [assessments, setAssessments] = useState<Assessment[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedChild, setExpandedChild] = useState<string | null>(null)
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null)
@@ -89,15 +104,43 @@ export default function ChildrenGradesPage() {
 
     const childrenWithStats = await Promise.all(
       (childrenData || []).map(async (child: any) => {
-        const { data: resultsData } = await supabase
-          .from('exam_results')
-          .select('percentage, grade')
+        // Get assignment submissions
+        const { data: assignmentsData } = await supabase
+          .from('assignment_submissions')
+          .select('marks_obtained')
           .eq('student_id', child.id)
-          .not('percentage', 'is', null)
+          .not('marks_obtained', 'is', null)
 
-        const avgGrade = resultsData && resultsData.length > 0
-          ? resultsData.reduce((sum, r) => sum + (r.percentage || 0), 0) / resultsData.length
-          : null
+        // Get term test results
+        const { data: testResultsData } = await supabase
+          .from('term_test_results')
+          .select('marks_obtained, term_tests(total_marks)')
+          .eq('student_id', child.id)
+
+        // Calculate combined average
+        let totalPercentage = 0
+        let totalCount = 0
+
+        if (assignmentsData && assignmentsData.length > 0) {
+          assignmentsData.forEach((a: any) => {
+            if (a.marks_obtained !== null) {
+              totalCount++
+              totalPercentage += a.marks_obtained // Assignments already in percentage
+            }
+          })
+        }
+
+        if (testResultsData && testResultsData.length > 0) {
+          testResultsData.forEach((result: any) => {
+            const testData = Array.isArray(result.term_tests) ? result.term_tests[0] : result.term_tests
+            const totalMarks = testData?.total_marks || 100
+            const percentage = (result.marks_obtained / totalMarks) * 100
+            totalPercentage += percentage
+            totalCount++
+          })
+        }
+
+        const avgGrade = totalCount > 0 ? totalPercentage / totalCount : null
 
         return {
           id: child.id,
@@ -109,7 +152,7 @@ export default function ChildrenGradesPage() {
           section: child.classes?.section || '',
           school_name: child.classes?.schools?.name || 'Unknown',
           average_grade: avgGrade,
-          total_exams: resultsData?.length || 0
+          total_assessments: totalCount
         }
       })
     )
@@ -119,73 +162,165 @@ export default function ChildrenGradesPage() {
   }
 
   const loadSubjects = async (childId: string) => {
-    const { data: resultsData } = await supabase
-      .from('exam_results')
+    // Get assignments for this child
+    const { data: assignmentsData } = await supabase
+      .from('assignments')
       .select(`
-        percentage,
-        grade,
-        exams(subject_id, subjects(name))
+        id,
+        subject_id,
+        subjects(name),
+        assignment_submissions!inner(marks_obtained, student_id)
+      `)
+      .eq('assignment_submissions.student_id', childId)
+
+    // Get term tests for this child
+    const { data: testsData } = await supabase
+      .from('term_test_results')
+      .select(`
+        marks_obtained,
+        term_tests(subject_id, total_marks, subjects(name))
       `)
       .eq('student_id', childId)
-      .not('percentage', 'is', null)
 
-    const subjectMap = new Map<string, { name: string; percentages: number[]; grades: string[] }>()
+    const subjectMap = new Map<string, { name: string; percentages: number[]; count: number }>()
 
-    resultsData?.forEach((result: any) => {
-      const subjectId = result.exams?.subject_id
-      const subjectName = result.exams?.subjects?.name
+    // Add assignments to subject map
+    assignmentsData?.forEach((assignment: any) => {
+      const subjectId = assignment.subject_id
+      const subjectName = assignment.subjects?.name
       if (!subjectId || !subjectName) return
 
-      if (!subjectMap.has(subjectId)) {
-        subjectMap.set(subjectId, { name: subjectName, percentages: [], grades: [] })
+      const submission = assignment.assignment_submissions?.find((s: any) => s.student_id === childId)
+      if (submission && submission.marks_obtained !== null) {
+        if (!subjectMap.has(subjectId)) {
+          subjectMap.set(subjectId, { name: subjectName, percentages: [], count: 0 })
+        }
+        subjectMap.get(subjectId)!.percentages.push(submission.marks_obtained)
+        subjectMap.get(subjectId)!.count++
       }
-      subjectMap.get(subjectId)!.percentages.push(result.percentage)
-      subjectMap.get(subjectId)!.grades.push(result.grade)
+    })
+
+    // Add term tests to subject map
+    testsData?.forEach((result: any) => {
+      const testData = Array.isArray(result.term_tests) ? result.term_tests[0] : result.term_tests
+      const subjectId = testData?.subject_id
+      const subjectName = testData?.subjects?.name
+      const totalMarks = testData?.total_marks || 100
+      
+      if (!subjectId || !subjectName) return
+
+      const percentage = (result.marks_obtained / totalMarks) * 100
+
+      if (!subjectMap.has(subjectId)) {
+        subjectMap.set(subjectId, { name: subjectName, percentages: [], count: 0 })
+      }
+      subjectMap.get(subjectId)!.percentages.push(percentage)
+      subjectMap.get(subjectId)!.count++
     })
 
     const subjectsArray: Subject[] = Array.from(subjectMap.entries()).map(([subjectId, data]) => ({
       subject_id: subjectId,
       subject_name: data.name,
-      exam_count: data.percentages.length,
-      average_percentage: data.percentages.reduce((sum, p) => sum + p, 0) / data.percentages.length,
-      best_grade: data.grades.sort()[0]
+      assessment_count: data.count,
+      average_percentage: data.percentages.length > 0 
+        ? data.percentages.reduce((sum, p) => sum + p, 0) / data.percentages.length 
+        : null
     }))
 
     setSubjects(subjectsArray)
   }
 
-  const loadExamResults = async (childId: string, subjectId: string) => {
-    const { data: resultsData } = await supabase
-      .from('exam_results')
+  const loadAssessments = async (childId: string, subjectId: string) => {
+    const allAssessments: Assessment[] = []
+
+    // Get assignments
+    const { data: assignmentsData } = await supabase
+      .from('assignments')
+      .select(`
+        id,
+        title,
+        due_date,
+        total_marks,
+        file_url,
+        subjects(name),
+        assignment_submissions!inner(
+          submission_file_url,
+          submitted_at,
+          marks_obtained,
+          student_id
+        )
+      `)
+      .eq('subject_id', subjectId)
+      .eq('assignment_submissions.student_id', childId)
+
+    assignmentsData?.forEach((a: any) => {
+      const submission = a.assignment_submissions?.find((s: any) => s.student_id === childId)
+      if (submission) {
+        allAssessments.push({
+          id: a.id,
+          title: a.title,
+          due_date: a.due_date,
+          total_marks: a.total_marks,
+          subject_name: a.subjects?.name || 'Unknown',
+          assignment_file_url: a.file_url,
+          submission_file_url: submission.submission_file_url,
+          submitted_at: submission.submitted_at,
+          marks_obtained: submission.marks_obtained,
+          type: 'assignment'
+        })
+      }
+    })
+
+    // Get term tests for this subject
+    const { data: testsData } = await supabase
+      .from('term_test_results')
       .select(`
         marks_obtained,
-        percentage,
-        grade,
-        exams(id, title, exam_date, total_marks, subject_id, subjects(name))
+        term_tests(
+          id,
+          title,
+          test_date,
+          total_marks,
+          test_paper_url,
+          subject_id,
+          subjects(name)
+        )
       `)
       .eq('student_id', childId)
-      .not('marks_obtained', 'is', null)
 
-    const filtered = resultsData
-      ?.filter((r: any) => r.exams?.subject_id === subjectId)
-      .map((r: any) => ({
-        exam_id: r.exams?.id,
-        exam_title: r.exams?.title,
-        exam_date: r.exams?.exam_date,
-        total_marks: r.exams?.total_marks,
-        marks_obtained: r.marks_obtained,
-        percentage: r.percentage,
-        grade: r.grade,
-        subject_name: r.exams?.subjects?.name
-      })) || []
+    testsData?.forEach((result: any) => {
+      const testData = Array.isArray(result.term_tests) ? result.term_tests[0] : result.term_tests
+      // Filter by subject_id in JavaScript
+      if (testData && testData.subject_id === subjectId && testData.subjects?.name) {
+        allAssessments.push({
+          id: testData.id,
+          title: testData.title || 'Term Test',
+          date: testData.test_date,
+          total_marks: testData.total_marks || 100,
+          subject_name: testData.subjects.name,
+          test_paper_url: testData.test_paper_url,
+          marks_obtained: result.marks_obtained,
+          type: 'test'
+        })
+      }
+    })
 
-    setExamResults(filtered)
+    // Sort by date (newest first)
+    allAssessments.sort((a, b) => {
+      const dateA = 'due_date' in a ? a.due_date : a.date
+      const dateB = 'due_date' in b ? b.due_date : b.date
+      return new Date(dateB).getTime() - new Date(dateA).getTime()
+    })
+
+    setAssessments(allAssessments)
   }
 
   const handleChildClick = async (childId: string) => {
     if (expandedChild === childId) {
       setExpandedChild(null)
       setSubjects([])
+      setExpandedSubject(null)
+      setAssessments([])
     } else {
       setExpandedChild(childId)
       await loadSubjects(childId)
@@ -195,10 +330,10 @@ export default function ChildrenGradesPage() {
   const handleSubjectClick = async (childId: string, subjectId: string) => {
     if (expandedSubject === subjectId) {
       setExpandedSubject(null)
-      setExamResults([])
+      setAssessments([])
     } else {
       setExpandedSubject(subjectId)
-      await loadExamResults(childId, subjectId)
+      await loadAssessments(childId, subjectId)
     }
   }
 
@@ -229,7 +364,7 @@ export default function ChildrenGradesPage() {
     <DashboardLayout title="My Children's Grades">
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <p className="text-gray-600">View your children's academic performance</p>
+          <p className="text-gray-600">View your children&apos;s academic performance</p>
         </div>
 
         {children.length > 1 && (
@@ -278,8 +413,8 @@ export default function ChildrenGradesPage() {
             </CardContent>
           </Card>
           <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
-            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Total Exams</CardTitle></CardHeader>
-            <CardContent><div className="text-4xl font-bold">{filteredChildren.reduce((sum, c) => sum + c.total_exams, 0)}</div></CardContent>
+            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Total Assessments</CardTitle></CardHeader>
+            <CardContent><div className="text-4xl font-bold">{filteredChildren.reduce((sum, c) => sum + c.total_assessments, 0)}</div></CardContent>
           </Card>
         </div>
 
@@ -306,7 +441,7 @@ export default function ChildrenGradesPage() {
                             <TrendingUp className="w-4 h-4 text-green-600" />
                             <span className="font-bold text-lg">{child.average_grade !== null ? child.average_grade.toFixed(1) + '%' : 'N/A'}</span>
                           </div>
-                          <p className="text-xs text-gray-500">{child.total_exams} exams</p>
+                          <p className="text-xs text-gray-500">{child.total_assessments} assessments</p>
                         </div>
                         {isExpanded ? <ChevronUp /> : <ChevronDown />}
                       </div>
@@ -327,17 +462,11 @@ export default function ChildrenGradesPage() {
                                 <BookOpen className="w-6 h-6 text-blue-500" />
                                 <div>
                                   <CardTitle className="text-base">{subject.subject_name}</CardTitle>
-                                  <p className="text-xs text-gray-500">{subject.exam_count} exams</p>
+                                  <p className="text-xs text-gray-500">{subject.assessment_count} assessments</p>
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
                                 <Badge className="text-lg">{subject.average_percentage?.toFixed(1)}%</Badge>
-                                <Badge className={
-                                  subject.best_grade === 'A' ? 'bg-green-100 text-green-800' :
-                                  subject.best_grade === 'B' ? 'bg-blue-100 text-blue-800' :
-                                  subject.best_grade === 'C' ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-gray-100 text-gray-800'
-                                }>{subject.best_grade || 'N/A'}</Badge>
                                 {isSubjectExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                               </div>
                             </div>
@@ -348,28 +477,92 @@ export default function ChildrenGradesPage() {
                               <Table>
                                 <TableHeader>
                                   <TableRow>
-                                    <TableHead>Exam</TableHead>
+                                    <TableHead>Type</TableHead>
+                                    <TableHead>Title</TableHead>
                                     <TableHead>Date</TableHead>
-                                    <TableHead>Marks</TableHead>
-                                    <TableHead>Percentage</TableHead>
+                                    <TableHead>Assignment File</TableHead>
+                                    <TableHead>Submission</TableHead>
                                     <TableHead>Grade</TableHead>
+                                    <TableHead>Status</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                  {examResults.map((result) => (
-                                    <TableRow key={result.exam_id}>
-                                      <TableCell className="font-medium">{result.exam_title}</TableCell>
-                                      <TableCell className="text-sm text-gray-500">{result.exam_date}</TableCell>
-                                      <TableCell>{result.marks_obtained}/{result.total_marks}</TableCell>
-                                      <TableCell>{result.percentage.toFixed(1)}%</TableCell>
+                                  {assessments.map((assessment) => (
+                                    <TableRow key={`${assessment.type}-${assessment.id}`}>
                                       <TableCell>
-                                        <Badge className={
-                                          result.grade === 'A' ? 'bg-green-100 text-green-800' :
-                                          result.grade === 'B' ? 'bg-blue-100 text-blue-800' :
-                                          result.grade === 'C' ? 'bg-yellow-100 text-yellow-800' :
-                                          result.grade === 'D' ? 'bg-orange-100 text-orange-800' :
-                                          'bg-red-100 text-red-800'
-                                        }>{result.grade}</Badge>
+                                        {assessment.type === 'assignment' ? (
+                                          <Badge className="bg-blue-100 text-blue-800">📝 Assignment</Badge>
+                                        ) : (
+                                          <Badge className="bg-purple-100 text-purple-800">📊 Test</Badge>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="font-medium">
+                                        {assessment.title}
+                                      </TableCell>
+                                      <TableCell className="text-sm text-gray-500">
+                                        {new Date('due_date' in assessment ? assessment.due_date : assessment.date).toLocaleDateString('en-US', { 
+                                          year: 'numeric', 
+                                          month: 'short', 
+                                          day: 'numeric' 
+                                        })}
+                                      </TableCell>
+                                      <TableCell>
+                                        {assessment.type === 'assignment' && assessment.assignment_file_url ? (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              window.open(assessment.assignment_file_url!, '_blank')
+                                            }}
+                                          >
+                                            📥 Assignment
+                                          </Button>
+                                        ) : assessment.type === 'test' && assessment.test_paper_url ? (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              window.open(assessment.test_paper_url!, '_blank')
+                                            }}
+                                          >
+                                            📥 Test Paper
+                                          </Button>
+                                        ) : (
+                                          <span className="text-gray-400">No file</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell>
+                                        {assessment.type === 'assignment' && assessment.submission_file_url ? (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="bg-green-50"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              window.open(assessment.submission_file_url!, '_blank')
+                                            }}
+                                          >
+                                            📄 View Submission
+                                          </Button>
+                                        ) : (
+                                          <span className="text-gray-400">No submission</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell>
+                                        {assessment.marks_obtained !== null ? (
+                                          <span className="font-semibold">{assessment.marks_obtained}/{assessment.total_marks}</span>
+                                        ) : (
+                                          <span className="text-gray-400">Not graded</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell>
+                                        {assessment.marks_obtained !== null ? (
+                                          <Badge className="bg-blue-100 text-blue-800">✓ Graded</Badge>
+                                        ) : (
+                                          <Badge className="bg-yellow-100 text-yellow-800">⏳ Pending</Badge>
+                                        )}
                                       </TableCell>
                                     </TableRow>
                                   ))}
@@ -386,7 +579,7 @@ export default function ChildrenGradesPage() {
                 {isExpanded && subjects.length === 0 && (
                   <Card className="ml-8 mt-2">
                     <CardContent className="py-6 text-center text-gray-500">
-                      No exam results available yet
+                      No assignments or tests available yet
                     </CardContent>
                   </Card>
                 )}

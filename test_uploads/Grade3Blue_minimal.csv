@@ -1,0 +1,4 @@
+Student,Sex,DOB,StudentID,GuardianName,GuardianID,GuardianDOB,Contact,Email,Level,Section
+Jack Smith,M,2008-05-10,73-1111222-S-11,Mary Smith,73-2222333-T-22,1979-08-12,+263770000001,mary.s@test.com,Form 3,Blue
+Kate Jones,F,2008-09-22,73-3333444-U-33,Paul Jones,73-4444555-V-44,1980-11-30,+263770000002,paul.j@test.com,Form 3,Blue
+Leo Brown,M,2008-12-05,73-5555666-W-55,Anna Brown,73-6666777-X-66,1981-04-18,+263770000003,anna.b@test.com,Form 3,Blue

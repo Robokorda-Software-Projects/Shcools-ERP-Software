@@ -66,17 +66,22 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
     try {
       const { data } = await supabase
         .from('schools')
-        .select('name, school_code, school_type')
+        .select('name, school_code, school_type, logo_url')
         .eq('id', profile.school_id)
         .single()
 
       if (data) {
         setSchoolName(data.name)
-        // Set logo based on school type
-        const logoPath = data.school_type === 'Primary' 
-          ? '/images/logos/schools/example-primary/logo.png'
-          : '/images/logos/schools/example-secondary/logo.png'
-        setSchoolLogo(logoPath)
+        // Use actual school logo if available, otherwise use default based on school type
+        if (data.logo_url) {
+          setSchoolLogo(data.logo_url)
+        } else {
+          // Fallback to default logo based on school type
+          const logoPath = data.school_type === 'Primary' 
+            ? '/images/logos/schools/example-primary/logo.png'
+            : '/images/logos/schools/example-secondary/logo.png'
+          setSchoolLogo(logoPath)
+        }
       }
     } catch (error) {
       console.error('Error loading school info:', error)
@@ -90,27 +95,26 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
       return [
         { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
         { href: '/dashboard/schools', icon: School, label: 'Schools' },
-        { href: '/dashboard/classes', icon: GraduationCap, label: 'Classes' },
-        { href: '/dashboard/teacher-assignments', icon: UserCog, label: 'Teacher Assignments' },
-        { href: '/dashboard/students', icon: Users, label: 'Students' },
-        { href: '/dashboard/parents', icon: Link2, label: 'Parent Management' },
-        { href: '/dashboard/exams', icon: FileText, label: 'Exams' },
-        { href: '/dashboard/reports', icon: BarChart3, label: 'Reports' },
-        { href: '/dashboard/settings', icon: Settings, label: 'Settings' },
+        { href: '/dashboard/classes', icon: GraduationCap, label: '⚠️⚒️Classes' },
+        { href: '/dashboard/teacher-assignments', icon: UserCog, label: '⚠️⚒️Teacher Assignments' },
+        { href: '/dashboard/students', icon: Users, label: '⚠️⚒️Students' },
+        { href: '/dashboard/parents', icon: Link2, label: '⚠️⚒️Parent Management' },
+        { href: '/dashboard/exams', icon: FileText, label: '⚠️⚒️Exams' },
+        { href: '/dashboard/reports', icon: BarChart3, label: '⚠️⚒️Reports' },
+        { href: '/dashboard/settings', icon: Settings, label: '⚠️⚒️Settings' },
       ]
     }
 
     if (role === 'school_admin') {
       return [
         { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-        { href: '/dashboard/classes', icon: GraduationCap, label: 'Classes' },
+        { href: '/dashboard/forms-classes', icon: GraduationCap, label: 'Forms & Classes' },
+        { href: '/dashboard/subjects', icon: BookOpen, label: 'Subjects' },
+        { href: '/dashboard/staff', icon: UserCog, label: 'Staff' },
         { href: '/dashboard/teacher-assignments', icon: UserCog, label: 'Teacher Assignments' },
-        { href: '/dashboard/students', icon: Users, label: 'Students' },
-        { href: '/dashboard/parents', icon: Link2, label: 'Parent Management' },
+        { href: '/dashboard/students/enrolled', icon: Users, label: 'Students' },
+        //{ href: '/dashboard/parents', icon: Link2, label: 'Parent Management' },
         { href: '/dashboard/exams', icon: FileText, label: 'Exams' },
-        { href: '/dashboard/reports', icon: BarChart3, label: 'Reports' },
-        { href: '/dashboard/calendar', icon: CalendarDays, label: 'Calendar' },
-        { href: '/dashboard/settings', icon: Settings, label: 'Settings' },
       ]
     }
 
@@ -121,6 +125,7 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
         { href: '/dashboard/attendance', icon: Users, label: 'Attendance' },
         { href: '/dashboard/assignments', icon: FileText, label: 'Assignments' },
         { href: '/dashboard/lesson-plans', icon: BookOpen, label: 'Lesson Plans' },
+        { href: '/dashboard/teacher-tests', icon: FileText, label: 'Term Tests' },
         { href: '/dashboard/exams', icon: FileText, label: 'Exams' },
       ]
     }
@@ -128,19 +133,28 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
     if (role === 'student') {
       return [
         { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-        { href: '/dashboard/my-grades', icon: BookOpen, label: 'My Grades' },
-        { href: '/dashboard/assignments', icon: FileText, label: 'Assignments' },
-        { href: '/dashboard/timetable', icon: CalendarDays, label: 'Timetable' },
-        { href: '/dashboard/resources', icon: Download, label: 'Resources' },
+        { href: '/dashboard/student/attendance', icon: CalendarDays, label: 'My Attendance' },
+        { href: '/dashboard/student/assignments', icon: Upload, label: 'My Assignments' },
+        { href: '/dashboard/student/grades', icon: GraduationCap, label: 'My Grades' },
+        { href: '/dashboard/student/resources', icon: Download, label: 'Resources' },
+        { href: '/dashboard/student/ereport', icon: Award, label: 'E-Report' },
       ]
     }
 
     if (role === 'parent') {
       return [
         { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-        { href: '/dashboard/children-grades', icon: BookOpen, label: "Children's Grades" },
-        { href: '/dashboard/attendance', icon: Users, label: 'Attendance' },
-        { href: '/dashboard/communications', icon: MessageSquare, label: 'Communications' },
+        { href: '/dashboard/children-grades', icon: BookOpen, label: "Grades" },
+        { href: '/dashboard/student/attendance', icon: CalendarDays, label: "Attendance" },
+        { href: '/dashboard/parent/resources', icon: Download, label: "Resources" },
+        { href: '/dashboard/student/ereport', icon: Award, label: "E-Report" },
+      ]
+    }
+
+    if (role === 'enrollment_officer') {
+      return [
+        { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+        { href: '/dashboard/students/enrolled', icon: Users, label: 'Students' },
       ]
     }
 
@@ -149,7 +163,8 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
 
   const handleSignOut = async () => {
     await signOut()
-    router.push('/login')
+    // Use replace to prevent going back to dashboard
+    router.replace('/login')
   }
 
   const handleNavClick = () => {
@@ -254,7 +269,7 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
               <h1 className="text-m font-bold text-black leading-tight">{schoolName}</h1>
               <div className="flex items-center gap-1">
                 
-                <span className="text-[10px] text-blue-300">Powered by Robokorda</span>
+                <span className="text-[10px] text-blue-300">Powered by Robokorda Africa</span>
               </div>
             </div>
           </div>
@@ -288,16 +303,6 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
                 >
                   <Icon className={`h-5 w-5 ${isActive ? 'text-blue-600' : 'text-gray-500'}`} />
                   <span className="flex-1">{item.label}</span>
-                  {item.label === 'Assignments' && (
-                    <span className="h-5 w-5 rounded-full bg-red-100 text-red-600 text-xs flex items-center justify-center">
-                      3
-                    </span>
-                  )}
-                  {item.label === 'Exams & Tests' && (
-                    <span className="h-5 w-5 rounded-full bg-orange-100 text-orange-600 text-xs flex items-center justify-center">
-                      2
-                    </span>
-                  )}
                 </Link>
               )
             })}

@@ -135,17 +135,18 @@ export default function TeacherClassesPage() {
     try {
       console.log('Loading students for class:', classId)
       
-      // CRITICAL: Do NOT query roll_number, admission_date, or school_id
-      // Only query columns that are guaranteed to exist
       const { data, error } = await supabase
         .from('students')
         .select(`
           id,
           user_id,
+          roll_number,
+          admission_date,
           profiles!students_user_id_fkey(username, full_name, email),
           parent:profiles!students_parent_id_fkey(full_name)
         `)
         .eq('class_id', classId)
+        .eq('student_status', 'active')
 
       if (error) {
         console.error('Supabase error:', error)
@@ -155,7 +156,7 @@ export default function TeacherClassesPage() {
       console.log('Raw student data received:', data)
       console.log('Number of students:', data?.length || 0)
 
-      // Map the data without relying on database roll_number
+      // Map the data
       const studentsList: Student[] = (data || []).map((s: any, index: number) => {
         console.log('Processing student:', s.id, s.profiles?.full_name)
         return {
@@ -164,8 +165,8 @@ export default function TeacherClassesPage() {
           username: s.profiles?.username || 'Unknown',
           full_name: s.profiles?.full_name || 'Unknown',
           email: s.profiles?.email || 'N/A',
-          roll_number: `#${String(index + 1).padStart(2, '0')}`, // Generate display number
-          admission_date: 'Not recorded',
+          roll_number: s.roll_number || `#${String(index + 1).padStart(2, '0')}`,
+          admission_date: s.admission_date ? new Date(s.admission_date).toLocaleDateString() : 'N/A',
           parent_name: s.parent?.full_name || null
         }
       })

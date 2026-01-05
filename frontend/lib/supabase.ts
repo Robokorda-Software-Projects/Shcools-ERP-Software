@@ -6,7 +6,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Types
-export type UserRole = 'super_admin' | 'school_admin' | 'teacher' | 'student' | 'parent'
+export type UserRole = 'super_admin' | 'school_admin' | 'enrollment_officer' | 'teacher' | 'student' | 'parent'
 export type AttendanceStatus = 'present' | 'absent' | 'late'
 
 export interface Profile {

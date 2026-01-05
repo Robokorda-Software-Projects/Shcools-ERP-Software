@@ -21,7 +21,7 @@ interface LessonPlan {
   id: string
   title: string
   description: string
-  document_type: 'lesson_plan' | 'syllabus' | 'scheme_of_work'
+  document_type: 'lesson_plan' | 'syllabus' | 'scheme_of_work' | 'notes' | 'worksheet' | 'reference'
   subject_id: string
   class_id: string
   file_url: string
@@ -47,6 +47,14 @@ interface Class {
   section: string
 }
 
+interface TeacherClassSubject {
+  id: string
+  class_id: string
+  subject_id: string
+  class_name: string
+  subject_name: string
+}
+
 export default function LessonPlansPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
@@ -54,6 +62,7 @@ export default function LessonPlansPage() {
   const [filteredPlans, setFilteredPlans] = useState<LessonPlan[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [classes, setClasses] = useState<Class[]>([])
+  const [teacherClassSubjects, setTeacherClassSubjects] = useState<TeacherClassSubject[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -69,8 +78,7 @@ export default function LessonPlansPage() {
     title: '',
     description: '',
     document_type: 'lesson_plan',
-    subject_id: '',
-    class_id: '',
+    class_subject_id: '',
     period_start: '',
     period_end: '',
   })
@@ -95,7 +103,7 @@ export default function LessonPlansPage() {
     try {
       setLoading(true)
 
-      // Fetch subjects
+      // Fetch subjects (for filters)
       let subjectQuery = supabase.from('subjects').select('id, name').order('name')
       if (profile?.role !== 'super_admin' && profile?.school_id) {
         subjectQuery = subjectQuery.eq('school_id', profile.school_id)
@@ -103,7 +111,7 @@ export default function LessonPlansPage() {
       const { data: subjectData } = await subjectQuery
       setSubjects(subjectData || [])
 
-      // Fetch classes
+      // Fetch classes (for filters)
       let classQuery = supabase
         .from('classes')
         .select('id, grade_level, section')
@@ -113,6 +121,31 @@ export default function LessonPlansPage() {
       }
       const { data: classData } = await classQuery
       setClasses(classData || [])
+
+      // For teachers, load their assigned class-subjects
+      if (profile?.role === 'teacher') {
+        const { data: assignmentsData, error: assignmentsError } = await supabase
+          .from('class_subject_assignments')
+          .select(`
+            id,
+            class_id,
+            subject_id,
+            subjects(name),
+            classes(grade_level, section)
+          `)
+          .eq('teacher_id', profile.id)
+
+        if (!assignmentsError && assignmentsData) {
+          const classSubjects: TeacherClassSubject[] = assignmentsData.map((a: any) => ({
+            id: a.id,
+            class_id: a.class_id,
+            subject_id: a.subject_id,
+            class_name: `${a.classes?.grade_level || ''} ${a.classes?.section || ''}`.trim(),
+            subject_name: a.subjects?.name || 'Unknown'
+          }))
+          setTeacherClassSubjects(classSubjects)
+        }
+      }
 
       // Fetch lesson plans
       await fetchLessonPlans()
@@ -126,8 +159,8 @@ export default function LessonPlansPage() {
 
   const fetchLessonPlans = async () => {
     try {
-      // Note: You'll need to create a 'lesson_plans' table in Supabase
-      const { data, error } = await supabase
+      // Build query based on role
+      let query = supabase
         .from('lesson_plans')
         .select(`
           *,
@@ -136,6 +169,17 @@ export default function LessonPlansPage() {
           classes(grade_level, section)
         `)
         .order('uploaded_at', { ascending: false })
+
+      // Teachers can only see their own documents
+      if (profile?.role === 'teacher') {
+        query = query.eq('uploaded_by', profile.id)
+      }
+      // School admins see all documents from their school
+      else if (profile?.role === 'school_admin' && profile?.school_id) {
+        query = query.eq('school_id', profile.school_id)
+      }
+
+      const { data, error } = await query
 
       if (error) throw error
 
@@ -212,9 +256,32 @@ export default function LessonPlansPage() {
       return
     }
 
-    if (!formData.subject_id || !formData.class_id) {
-      toast.error('Please select subject and class')
+    if (!formData.class_subject_id) {
+      toast.error('Please select a class and subject')
       return
+    }
+
+    let class_id: string
+    let subject_id: string
+
+    if (profile?.role === 'teacher') {
+      // For teachers, get from the class_subject_assignments
+      const selectedClassSubject = teacherClassSubjects.find(cs => cs.id === formData.class_subject_id)
+      if (!selectedClassSubject) {
+        toast.error('Invalid class-subject selection')
+        return
+      }
+      class_id = selectedClassSubject.class_id
+      subject_id = selectedClassSubject.subject_id
+    } else {
+      // For admins, parse from the pipe-separated format
+      const parts = formData.class_subject_id.split('|')
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        toast.error('Please select both class and subject')
+        return
+      }
+      class_id = parts[0]
+      subject_id = parts[1]
     }
 
     try {
@@ -241,12 +308,12 @@ export default function LessonPlansPage() {
         title: formData.title,
         description: formData.description,
         document_type: formData.document_type,
-        subject_id: formData.subject_id,
-        class_id: formData.class_id,
+        subject_id: subject_id,
+        class_id: class_id,
         file_url: urlData.publicUrl,
         file_name: selectedFile.name,
-        period_start: formData.period_start,
-        period_end: formData.period_end,
+        period_start: formData.period_start || null,
+        period_end: formData.period_end || null,
         uploaded_by: profile?.id,
         school_id: profile?.school_id,
       })
@@ -270,8 +337,7 @@ export default function LessonPlansPage() {
       title: '',
       description: '',
       document_type: 'lesson_plan',
-      subject_id: '',
-      class_id: '',
+      class_subject_id: '',
       period_start: '',
       period_end: '',
     })
@@ -302,9 +368,12 @@ export default function LessonPlansPage() {
 
   const getDocumentTypeLabel = (type: string) => {
     switch (type) {
-      case 'lesson_plan': return 'Lesson Plan'
-      case 'syllabus': return 'Syllabus'
-      case 'scheme_of_work': return 'Scheme of Work'
+      case 'lesson_plan': return '📚 Lesson Plan'
+      case 'scheme_of_work': return '📋 Scheme of Work'
+      case 'notes': return '📝 Subject Notes'
+      case 'syllabus': return '📄 Syllabus'
+      case 'worksheet': return '✏️ Worksheet'
+      case 'reference': return '📖 Reference'
       default: return type
     }
   }
@@ -312,8 +381,11 @@ export default function LessonPlansPage() {
   const getDocumentTypeBadge = (type: string) => {
     switch (type) {
       case 'lesson_plan': return 'bg-blue-500'
-      case 'syllabus': return 'bg-green-500'
       case 'scheme_of_work': return 'bg-purple-500'
+      case 'notes': return 'bg-green-500'
+      case 'syllabus': return 'bg-indigo-500'
+      case 'worksheet': return 'bg-yellow-500'
+      case 'reference': return 'bg-orange-500'
       default: return 'bg-gray-500'
     }
   }
@@ -358,21 +430,22 @@ export default function LessonPlansPage() {
           </Card>
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Syllabi</CardTitle>
+              <CardTitle className="text-sm font-medium">Notes</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {lessonPlans.filter(p => p.document_type === 'syllabus').length}
+              <div className="text-2xl font-bold text-green-600">
+                {lessonPlans.filter(p => p.document_type === 'notes').length}
               </div>
+              <p className="text-xs text-gray-500">Visible to students/parents</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Schemes of Work</CardTitle>
+              <CardTitle className="text-sm font-medium">Syllabi & More</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {lessonPlans.filter(p => p.document_type === 'scheme_of_work').length}
+                {lessonPlans.filter(p => ['syllabus', 'scheme_of_work', 'worksheet', 'reference'].includes(p.document_type)).length}
               </div>
             </CardContent>
           </Card>
@@ -405,7 +478,7 @@ export default function LessonPlansPage() {
                     <DialogHeader>
                       <DialogTitle>Upload Teaching Document</DialogTitle>
                       <DialogDescription>
-                        Upload lesson plans, syllabi, or schemes of work (PDF only, max 10MB)
+                        Upload lesson plans, notes, syllabus, worksheets, or schemes of work (PDF only, max 10MB)
                       </DialogDescription>
                     </DialogHeader>
                     <form onSubmit={uploadDocument} className="space-y-4">
@@ -420,11 +493,17 @@ export default function LessonPlansPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="lesson_plan">Lesson Plan</SelectItem>
-                            <SelectItem value="syllabus">Syllabus</SelectItem>
-                            <SelectItem value="scheme_of_work">Scheme of Work</SelectItem>
+                            <SelectItem value="lesson_plan">📚 Lesson Plan (Admin/Teachers Only)</SelectItem>
+                            <SelectItem value="scheme_of_work">📋 Scheme of Work (Admin/Teachers Only)</SelectItem>
+                            <SelectItem value="notes">📝 Subject Notes (Students & Parents Can View)</SelectItem>
+                            <SelectItem value="syllabus">📄 Syllabus (Students & Parents Can View)</SelectItem>
+                            <SelectItem value="worksheet">✏️ Worksheet (Students & Parents Can View)</SelectItem>
+                            <SelectItem value="reference">📖 Reference Material (Students & Parents Can View)</SelectItem>
                           </SelectContent>
                         </Select>
+                        <p className="text-xs text-gray-500">
+                          <strong>Admin Only:</strong> Lesson Plans & Schemes of Work | <strong>Students & Parents:</strong> Notes, Syllabus, Worksheets, References
+                        </p>
                       </div>
 
                       <div className="space-y-2">
@@ -449,47 +528,75 @@ export default function LessonPlansPage() {
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      {profile?.role === 'teacher' ? (
                         <div className="space-y-2">
-                          <Label>Subject *</Label>
+                          <Label>Class & Subject *</Label>
                           <Select
-                            value={formData.subject_id}
-                            onValueChange={(value) => setFormData({ ...formData, subject_id: value })}
+                            value={formData.class_subject_id}
+                            onValueChange={(value) => setFormData({ ...formData, class_subject_id: value })}
                             disabled={uploading}
                           >
                             <SelectTrigger>
-                              <SelectValue placeholder="Select subject" />
+                              <SelectValue placeholder="Select class and subject" />
                             </SelectTrigger>
                             <SelectContent>
-                              {subjects.map((subject) => (
-                                <SelectItem key={subject.id} value={subject.id}>
-                                  {subject.name}
+                              {teacherClassSubjects.map((cs) => (
+                                <SelectItem key={cs.id} value={cs.id}>
+                                  {cs.class_name} - {cs.subject_name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Subject *</Label>
+                            <Select
+                              value={formData.class_subject_id?.split('|')[1] || ''}
+                              onValueChange={(value) => {
+                                const currentClass = formData.class_subject_id?.split('|')[0] || ''
+                                setFormData({ ...formData, class_subject_id: `${currentClass}|${value}` })
+                              }}
+                              disabled={uploading}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select subject" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {subjects.map((subject) => (
+                                  <SelectItem key={subject.id} value={subject.id}>
+                                    {subject.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                        <div className="space-y-2">
-                          <Label>Class *</Label>
-                          <Select
-                            value={formData.class_id}
-                            onValueChange={(value) => setFormData({ ...formData, class_id: value })}
-                            disabled={uploading}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select class" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {classes.map((cls) => (
-                                <SelectItem key={cls.id} value={cls.id}>
-                                  {cls.grade_level} {cls.section}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="space-y-2">
+                            <Label>Class *</Label>
+                            <Select
+                              value={formData.class_subject_id?.split('|')[0] || ''}
+                              onValueChange={(value) => {
+                                const currentSubject = formData.class_subject_id?.split('|')[1] || ''
+                                setFormData({ ...formData, class_subject_id: `${value}|${currentSubject}` })
+                              }}
+                              disabled={uploading}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select class" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {classes.map((cls) => (
+                                  <SelectItem key={cls.id} value={cls.id}>
+                                    {cls.grade_level} {cls.section}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
@@ -565,8 +672,11 @@ export default function LessonPlansPage() {
                   <SelectContent>
                     <SelectItem value="all">All Types</SelectItem>
                     <SelectItem value="lesson_plan">Lesson Plans</SelectItem>
-                    <SelectItem value="syllabus">Syllabi</SelectItem>
                     <SelectItem value="scheme_of_work">Schemes of Work</SelectItem>
+                    <SelectItem value="notes">Subject Notes</SelectItem>
+                    <SelectItem value="syllabus">Syllabi</SelectItem>
+                    <SelectItem value="worksheet">Worksheets</SelectItem>
+                    <SelectItem value="reference">Reference Materials</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -38,7 +38,22 @@ export async function POST(request: NextRequest) {
       }
     )
 
+    // First delete the profile (to ensure clean removal)
+    console.log('🗑️ Deleting profile first...')
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .delete()
+      .eq('id', user_id)
+
+    if (profileError) {
+      console.error('⚠️ Profile delete error (continuing):', profileError)
+      // Continue anyway - profile might not exist or have different constraints
+    } else {
+      console.log('✅ Profile deleted')
+    }
+
     // Delete the auth user
+    console.log('🗑️ Deleting auth user...')
     const { error } = await supabaseAdmin.auth.admin.deleteUser(user_id)
 
     if (error) {

@@ -1,20 +1,27 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Progress } from '@/components/ui/progress'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
-import { Plus, FileText, Calendar, ChevronDown, ChevronUp, Trash2, CheckCircle, Clock, Save } from 'lucide-react'
+import { getCurrentTerm, getTermLabel, getDefaultExamDate } from '@/lib/term-utils'
+import { 
+  FileText, CheckCircle, Clock, ChevronDown, ChevronUp, 
+  Download, Users, Search, UserCircle, BookOpen, GraduationCap,
+  Lock, Unlock, Settings, CalendarClock, Send, Trash2, Plus, Edit
+} from 'lucide-react'
+import Link from 'next/link'
 
 interface Exam {
   id: string
@@ -26,115 +33,182 @@ interface Exam {
   class_name: string
   subject_id: string
   subject_name: string
+  is_submitted: boolean
+  exam_paper_url: string | null
   graded_count: number
   total_students: number
 }
 
-interface StudentGrade {
+interface TeacherWithExams {
+  id: string
+  full_name: string
+  username: string
+  exams: Exam[]
+  totalClasses: number
+  totalSubjects: number
+}
+
+interface StudentResult {
   student_id: string
   student_name: string
-  username: string
   marks_obtained: number | null
   percentage: number | null
   grade: string | null
-  result_id: string | null
 }
 
-export default function TeacherExamsPage() {
+interface MarkingPeriod {
+  id: string
+  term: string
+  academic_year: string
+  start_date: string
+  end_date: string
+  is_active: boolean
+  results_published: boolean
+}
+
+interface ClassSubjectOption {
+  class_id: string
+  subject_id: string
+  class_name: string
+  subject_name: string
+  teacher_id: string
+  teacher_name: string
+}
+
+export default function AdminExamsPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [exams, setExams] = useState<Exam[]>([])
-  const [classes, setClasses] = useState<any[]>([])
-  const [subjects, setSubjects] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [expandedExam, setExpandedExam] = useState<string | null>(null)
-  const [studentGrades, setStudentGrades] = useState<StudentGrade[]>([])
-  const [savingGrades, setSavingGrades] = useState(false)
   
+  const [teachersWithExams, setTeachersWithExams] = useState<TeacherWithExams[]>([])
+  const [markingPeriod, setMarkingPeriod] = useState<MarkingPeriod | null>(null)
+  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [examTitle, setExamTitle] = useState('')
-  const [examDescription, setExamDescription] = useState('')
-  const [examDate, setExamDate] = useState('')
-  const [totalMarks, setTotalMarks] = useState('')
-  const [selectedClassId, setSelectedClassId] = useState('')
-  const [selectedSubjectId, setSelectedSubjectId] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  const [currentTerm, setCurrentTerm] = useState(getTermLabel())
+  const [statusFilter, setStatusFilter] = useState<'all' | 'submitted' | 'pending' | 'grading'>('all')
+  
+  // Expanded states
+  const [expandedTeacher, setExpandedTeacher] = useState<string | null>(null)
+  const [expandedExam, setExpandedExam] = useState<string | null>(null)
+  const [studentResults, setStudentResults] = useState<StudentResult[]>([])
+  
+  // Add Exam Dialog state
+  const [isAddExamDialogOpen, setIsAddExamDialogOpen] = useState(false)
+  const [classSubjectOptions, setClassSubjectOptions] = useState<ClassSubjectOption[]>([])
+  const [selectedClassSubject, setSelectedClassSubject] = useState('')
+  const [newExamTitle, setNewExamTitle] = useState('')
+  const [newExamDate, setNewExamDate] = useState('')
+  const [newExamMarks, setNewExamMarks] = useState('100')
+  const [isCreatingExam, setIsCreatingExam] = useState(false)
+  
+  // Publish dialog state
+  const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false)
+  const [isPublishing, setIsPublishing] = useState(false)
 
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login')
     }
-  }, [user, authLoading, router])
+    if (!authLoading && profile && !['school_admin', 'super_admin'].includes(profile.role)) {
+      // Redirect teachers to their exams page
+      if (profile.role === 'teacher') {
+        router.push('/dashboard/teacher-exams')
+      } else {
+        router.push('/dashboard')
+        toast.error('Access denied - Admin only')
+      }
+    }
+  }, [user, profile, authLoading, router])
 
   useEffect(() => {
-    if (profile?.role === 'teacher') {
+    if (profile?.school_id) {
       loadData()
     }
   }, [profile])
 
   const loadData = async () => {
     setLoading(true)
-
     try {
-      // Get teacher's classes
-      const { data: classAssignments } = await supabase
-        .from('class_subject_assignments')
-        .select(`
-          class_id,
-          subject_id,
-          classes!inner(id, grade_level, section, school_id),
-          subjects(id, name)
-        `)
-        .eq('teacher_id', profile?.id)
-        .eq('classes.school_id', profile?.school_id)
+      // Get current term info
+      const termInfo = getCurrentTerm()
+      setCurrentTerm(getTermLabel(termInfo))
 
-      // Build unique classes and subjects lists
-      const classesMap = new Map()
-      const subjectsMap = new Map()
+      // Check for active marking period
+      const { data: periods } = await supabase
+        .from('exam_marking_periods')
+        .select('*')
+        .eq('school_id', profile?.school_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
 
-      classAssignments?.forEach((assignment: any) => {
-        const cls = assignment.classes
-        if (cls && !classesMap.has(cls.id)) {
-          classesMap.set(cls.id, {
-            id: cls.id,
-            grade_level: cls.grade_level,
-            section: cls.section,
-            school_id: cls.school_id
-          })
-        }
-
-        const subj = assignment.subjects
-        if (subj && !subjectsMap.has(subj.id)) {
-          subjectsMap.set(subj.id, {
-            id: subj.id,
-            name: subj.name
-          })
-        }
+      console.log('Exams page - Marking periods loaded:', {
+        adminSchoolId: profile?.school_id,
+        periodsFound: periods,
+        firstPeriod: periods?.[0]
       })
 
-      setClasses(Array.from(classesMap.values()))
-      setSubjects(Array.from(subjectsMap.values()))
+      if (periods && periods.length > 0) {
+        setMarkingPeriod(periods[0])
+      } else {
+        setMarkingPeriod(null)
+      }
 
-      // Get teacher's exams (only those created by this teacher)
-      const classIds = Array.from(classesMap.keys())
-      
-      if (classIds.length > 0) {
+      // Load all teachers with their assignments
+      const { data: teachersData } = await supabase
+        .from('profiles')
+        .select('id, full_name, username')
+        .eq('role', 'teacher')
+        .eq('school_id', profile?.school_id)
+        .order('full_name')
+
+      // For each teacher, get their assignments and exams
+      const teachersWithExamsData: TeacherWithExams[] = []
+
+      for (const teacher of teachersData || []) {
+        // Get teacher's assignments
+        const { data: assignments } = await supabase
+          .from('class_subject_assignments')
+          .select(`
+            class_id,
+            subject_id,
+            classes(id, grade_level, section),
+            subjects(id, name)
+          `)
+          .eq('teacher_id', teacher.id)
+
+        // Get unique classes and subjects
+        const uniqueClasses = new Set(assignments?.map(a => a.class_id))
+        const uniqueSubjects = new Set(assignments?.map(a => a.subject_id))
+
+        // Get exams for this teacher (created by them or for their classes)
+        const classIds = assignments?.map(a => a.class_id) || []
+        
+        if (classIds.length === 0) {
+          teachersWithExamsData.push({
+            id: teacher.id,
+            full_name: teacher.full_name,
+            username: teacher.username,
+            exams: [],
+            totalClasses: 0,
+            totalSubjects: 0
+          })
+          continue
+        }
+
         const { data: examsData } = await supabase
           .from('exams')
           .select(`
             id, title, description, exam_date, total_marks, 
-            class_id, subject_id,
+            class_id, subject_id, created_by,
+            exam_paper_url, exam_paper_name, is_submitted, submitted_at,
             classes(grade_level, section),
             subjects(name)
           `)
-          .eq('created_by', profile?.id) // Only show exams created by this teacher
           .eq('school_id', profile?.school_id)
-          .in('class_id', classIds)
+          .eq('created_by', teacher.id)
           .order('exam_date', { ascending: false })
 
-        const examsWithCounts = await Promise.all(
+        // Get grading counts
+        const examsWithCounts: Exam[] = await Promise.all(
           (examsData || []).map(async (exam: any) => {
             const { count: totalCount } = await supabase
               .from('students')
@@ -157,404 +231,801 @@ export default function TeacherExamsPage() {
               class_name: `${exam.classes?.grade_level || ''} ${exam.classes?.section || ''}`,
               subject_id: exam.subject_id,
               subject_name: exam.subjects?.name || 'Unknown',
+              is_submitted: exam.is_submitted || false,
+              exam_paper_url: exam.exam_paper_url || null,
               graded_count: gradedCount || 0,
               total_students: totalCount || 0
             }
           })
         )
 
-        setExams(examsWithCounts)
+        teachersWithExamsData.push({
+          id: teacher.id,
+          full_name: teacher.full_name,
+          username: teacher.username,
+          exams: examsWithCounts,
+          totalClasses: uniqueClasses.size,
+          totalSubjects: uniqueSubjects.size
+        })
       }
-    } catch (error) {
-      console.error('Error loading exams:', error)
-      toast.error('Failed to load exams')
-    }
 
-    setLoading(false)
-  }
+      // Sort by number of exams (teachers with exams first)
+      teachersWithExamsData.sort((a, b) => b.exams.length - a.exams.length)
 
-  const loadStudentGrades = async (examId: string, classId: string) => {
-    const { data: studentsData } = await supabase
-      .from('students')
-      .select('id, profiles!students_user_id_fkey(username, full_name)')
-      .eq('class_id', classId)
-      .order('profiles(full_name)')
-
-    const { data: resultsData } = await supabase
-      .from('exam_results')
-      .select('*')
-      .eq('exam_id', examId)
-
-    const grades: StudentGrade[] = (studentsData || []).map((student: any) => {
-      const result = resultsData?.find(r => r.student_id === student.id)
-      return {
-        student_id: student.id,
-        student_name: student.profiles?.full_name || 'Unknown',
-        username: student.profiles?.username || 'Unknown',
-        marks_obtained: result?.marks_obtained || null,
-        percentage: result?.percentage || null,
-        grade: result?.grade || null,
-        result_id: result?.id || null
-      }
-    })
-
-    setStudentGrades(grades)
-  }
-
-  const handleMarksChange = (studentId: string, marks: string, totalMarks: number) => {
-    const marksNum = parseFloat(marks) || 0
-    const percentage = (marksNum / totalMarks) * 100
-    let grade = 'F'
-    if (percentage >= 90) grade = 'A'
-    else if (percentage >= 80) grade = 'B'
-    else if (percentage >= 70) grade = 'C'
-    else if (percentage >= 60) grade = 'D'
-    else if (percentage >= 50) grade = 'E'
-
-    setStudentGrades(prev => prev.map(sg => 
-      sg.student_id === studentId ? { ...sg, marks_obtained: marksNum, percentage, grade } : sg
-    ))
-  }
-
-  const handleSaveGrades = async (examId: string) => {
-    setSavingGrades(true)
-    try {
-      for (const sg of studentGrades) {
-        if (sg.marks_obtained === null) continue
-        
-        const gradeData = {
-          exam_id: examId,
-          student_id: sg.student_id,
-          marks_obtained: sg.marks_obtained,
-          percentage: sg.percentage,
-          grade: sg.grade,
-          graded_by: profile?.id,
-          graded_at: new Date().toISOString()
-        }
-
-        if (sg.result_id) {
-          await supabase.from('exam_results').update(gradeData).eq('id', sg.result_id)
-        } else {
-          await supabase.from('exam_results').insert(gradeData)
-        }
-      }
-      toast.success('Grades saved successfully!')
-      loadData()
-      setExpandedExam(null)
+      setTeachersWithExams(teachersWithExamsData)
     } catch (error: any) {
-      toast.error('Failed to save grades')
-      console.error(error)
+      console.error('Error loading data:', error)
+      toast.error('Failed to load exams')
+    } finally {
+      setLoading(false)
     }
-    setSavingGrades(false)
   }
 
-  const handleCreateExam = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitting(true)
-    
-    const { error } = await supabase.from('exams').insert({
-      title: examTitle,
-      description: examDescription,
-      exam_date: examDate,
-      total_marks: parseInt(totalMarks),
-      school_id: profile?.school_id,
-      class_id: selectedClassId,
-      subject_id: selectedSubjectId,
-      created_by: profile?.id
-    })
+  const loadStudentResults = async (examId: string, classId: string) => {
+    try {
+      const { data: studentsData } = await supabase
+        .from('students')
+        .select('id, profiles!students_user_id_fkey(full_name)')
+        .eq('class_id', classId)
+        .order('profiles(full_name)')
 
-    if (error) {
-      toast.error('Failed to create exam')
-      console.error(error)
-    } else {
-      toast.success('Exam created successfully!')
-      setDialogOpen(false)
-      setExamTitle('')
-      setExamDescription('')
-      setExamDate('')
-      setTotalMarks('')
-      setSelectedClassId('')
-      setSelectedSubjectId('')
-      loadData()
+      const { data: resultsData } = await supabase
+        .from('exam_results')
+        .select('*')
+        .eq('exam_id', examId)
+
+      const results: StudentResult[] = (studentsData || []).map((student: any) => {
+        const result = resultsData?.find((r: any) => r.student_id === student.id)
+        return {
+          student_id: student.id,
+          student_name: student.profiles?.full_name || 'Unknown',
+          marks_obtained: result?.marks_obtained || null,
+          percentage: result?.percentage || null,
+          grade: result?.grade || null
+        }
+      })
+
+      setStudentResults(results)
+    } catch (error) {
+      console.error('Error loading results:', error)
     }
-    setSubmitting(false)
+  }
+
+  const handleExpandTeacher = (teacherId: string) => {
+    if (expandedTeacher === teacherId) {
+      setExpandedTeacher(null)
+      setExpandedExam(null)
+    } else {
+      setExpandedTeacher(teacherId)
+      setExpandedExam(null)
+    }
+  }
+
+  const handleExpandExam = async (examId: string, classId: string) => {
+    if (expandedExam === examId) {
+      setExpandedExam(null)
+      setStudentResults([])
+    } else {
+      setExpandedExam(examId)
+      await loadStudentResults(examId, classId)
+    }
+  }
+
+  const handlePublishResults = async () => {
+    if (!markingPeriod) {
+      console.log('No marking period to publish')
+      return
+    }
+
+    try {
+      setIsPublishing(true)
+      
+      console.log('Publishing results for:', {
+        markingPeriodId: markingPeriod.id,
+        markingPeriodSchoolId: (markingPeriod as any).school_id,
+        term: markingPeriod.term,
+        adminSchoolId: profile?.school_id
+      })
+
+      const { data, error } = await supabase
+        .from('exam_marking_periods')
+        .update({
+          results_published: true,
+          published_at: new Date().toISOString(),
+          published_by: profile?.id,
+          is_active: false
+        })
+        .eq('id', markingPeriod.id)
+        .select()
+
+      if (error) {
+        console.error('Publish error:', error)
+        throw error
+      }
+      
+      console.log('Publish result:', data)
+
+      toast.success('Results published! Students and parents can now view them.')
+      setIsPublishDialogOpen(false)
+      await loadData()
+    } catch (error: any) {
+      console.error('Publish failed:', error)
+      toast.error('Failed to publish results')
+    } finally {
+      setIsPublishing(false)
+    }
+  }
+
+  const handleUnpublishResults = async () => {
+    if (!markingPeriod) return
+
+    try {
+      const { error } = await supabase
+        .from('exam_marking_periods')
+        .update({
+          results_published: false,
+          published_at: null,
+          published_by: null
+        })
+        .eq('id', markingPeriod.id)
+
+      if (error) throw error
+
+      toast.success('Results unpublished. Students and parents can no longer view them.')
+      await loadData()
+    } catch (error: any) {
+      toast.error('Failed to unpublish results')
+    }
   }
 
   const handleDeleteExam = async (examId: string, examTitle: string) => {
-    if (!confirm(`Delete "${examTitle}"? All grades will be deleted.`)) return
-    
-    const { error } = await supabase.from('exams').delete().eq('id', examId)
-    if (error) {
-      toast.error('Failed to delete exam')
-    } else {
-      toast.success('Exam deleted!')
-      loadData()
+    if (!confirm(`Are you sure you want to delete "${examTitle}"? This will also delete all associated marks.`)) {
+      return
+    }
+
+    try {
+      // First delete all exam results
+      const { error: resultsError } = await supabase
+        .from('exam_results')
+        .delete()
+        .eq('exam_id', examId)
+
+      if (resultsError) throw resultsError
+
+      // Then delete the exam
+      const { error: examError } = await supabase
+        .from('exams')
+        .delete()
+        .eq('id', examId)
+
+      if (examError) throw examError
+
+      toast.success('Exam deleted successfully')
+      await loadData()
+    } catch (error: any) {
+      console.error('Delete exam error:', error)
+      toast.error('Failed to delete exam: ' + error.message)
     }
   }
 
-  const handleExpandExam = (examId: string, classId: string) => {
-    const isExpanding = expandedExam !== examId
-    setExpandedExam(isExpanding ? examId : null)
-    
-    if (isExpanding) {
-      loadStudentGrades(examId, classId)
+  const loadClassSubjectOptions = async () => {
+    try {
+      // First get all classes for this school
+      const { data: classesData } = await supabase
+        .from('classes')
+        .select('id')
+        .eq('school_id', profile?.school_id)
+
+      const classIds = (classesData || []).map(c => c.id)
+      
+      if (classIds.length === 0) {
+        setClassSubjectOptions([])
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('class_subject_assignments')
+        .select(`
+          class_id,
+          subject_id,
+          teacher_id,
+          classes(grade_level, section),
+          subjects(name),
+          profiles:teacher_id(full_name)
+        `)
+        .in('class_id', classIds)
+
+      if (error) throw error
+
+      const options: ClassSubjectOption[] = (data || [])
+        .filter((item: any) => item.classes && item.subjects)
+        .map((item: any) => ({
+          class_id: item.class_id,
+          subject_id: item.subject_id,
+          class_name: `${item.classes?.grade_level || ''} ${item.classes?.section || ''}`.trim(),
+          subject_name: item.subjects?.name || 'Unknown',
+          teacher_id: item.teacher_id,
+          teacher_name: item.profiles?.full_name || 'Unassigned'
+        }))
+
+      setClassSubjectOptions(options)
+      console.log('Loaded class-subject options:', options.length)
+    } catch (error: any) {
+      console.error('Error loading class-subject options:', error)
     }
   }
 
-  const filteredExams = exams.filter(exam => {
-    if (!searchQuery) return true
-    const query = searchQuery.toLowerCase()
-    return (
-      exam.title.toLowerCase().includes(query) ||
-      exam.class_name.toLowerCase().includes(query) ||
-      exam.subject_name.toLowerCase().includes(query)
+  const handleAddExam = async () => {
+    if (!selectedClassSubject || !newExamTitle || !newExamDate) {
+      toast.error('Please fill all required fields')
+      return
+    }
+
+    const selected = classSubjectOptions.find(
+      opt => `${opt.class_id}|${opt.subject_id}` === selectedClassSubject
     )
+
+    if (!selected) {
+      toast.error('Invalid class-subject selection')
+      return
+    }
+
+    try {
+      setIsCreatingExam(true)
+
+      // Check if exam already exists
+      const { data: existing } = await supabase
+        .from('exams')
+        .select('id')
+        .eq('class_id', selected.class_id)
+        .eq('subject_id', selected.subject_id)
+        .eq('school_id', profile?.school_id)
+        .eq('title', newExamTitle)
+        .single()
+
+      if (existing) {
+        toast.error('An exam with this title already exists for this class and subject')
+        return
+      }
+
+      const { error } = await supabase.from('exams').insert({
+        title: newExamTitle,
+        description: `Exam for ${selected.subject_name} - ${selected.class_name}`,
+        exam_date: newExamDate,
+        total_marks: parseInt(newExamMarks),
+        class_id: selected.class_id,
+        subject_id: selected.subject_id,
+        school_id: profile?.school_id,
+        created_by: selected.teacher_id || profile?.id,
+        is_submitted: false
+      })
+
+      if (error) throw error
+
+      toast.success('Exam created successfully')
+      setIsAddExamDialogOpen(false)
+      setSelectedClassSubject('')
+      setNewExamTitle('')
+      setNewExamDate('')
+      setNewExamMarks('100')
+      await loadData()
+    } catch (error: any) {
+      console.error('Error creating exam:', error)
+      toast.error('Failed to create exam: ' + error.message)
+    } finally {
+      setIsCreatingExam(false)
+    }
+  }
+
+  const openAddExamDialog = async () => {
+    await loadClassSubjectOptions()
+    const termInfo = getCurrentTerm()
+    const defaultTitle = `End of ${termInfo.termName} Exam`
+    setNewExamTitle(defaultTitle)
+    setNewExamDate(getDefaultExamDate(termInfo))
+    setIsAddExamDialogOpen(true)
+  }
+
+  // Filter teachers based on search and status filter
+  const filteredTeachers = teachersWithExams.map(teacher => {
+    // First filter exams by status
+    let filteredExams = teacher.exams
+    if (statusFilter === 'submitted') {
+      filteredExams = teacher.exams.filter(e => e.is_submitted)
+    } else if (statusFilter === 'pending') {
+      filteredExams = teacher.exams.filter(e => !e.is_submitted && e.graded_count === 0)
+    } else if (statusFilter === 'grading') {
+      filteredExams = teacher.exams.filter(e => !e.is_submitted && e.graded_count > 0 && e.graded_count < e.total_students)
+    }
+    
+    return { ...teacher, exams: filteredExams }
+  }).filter(teacher => {
+    // Then filter by search query
+    if (!searchQuery) return teacher.exams.length > 0 || statusFilter === 'all'
+    const query = searchQuery.toLowerCase()
+    return (teacher.full_name.toLowerCase().includes(query) ||
+      teacher.username.toLowerCase().includes(query) ||
+      teacher.exams.some(e => 
+        e.title.toLowerCase().includes(query) ||
+        e.class_name.toLowerCase().includes(query) ||
+        e.subject_name.toLowerCase().includes(query)
+      )) && (teacher.exams.length > 0 || statusFilter === 'all')
   })
 
+  // Stats
+  const totalExams = teachersWithExams.reduce((sum, t) => sum + t.exams.length, 0)
+  const submittedExams = teachersWithExams.reduce((sum, t) => sum + t.exams.filter(e => e.is_submitted).length, 0)
+  const pendingExams = totalExams - submittedExams
+  const fullyGradedExams = teachersWithExams.reduce((sum, t) => 
+    sum + t.exams.filter(e => e.graded_count === e.total_students && e.total_students > 0).length, 0)
+
   if (authLoading || loading) {
-    return <DashboardLayout title="My Exams"><div>Loading...</div></DashboardLayout>
+    return (
+      <DashboardLayout title="Exams Management">
+        <div className="flex items-center justify-center h-96">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600"></div>
+        </div>
+      </DashboardLayout>
+    )
   }
 
-  if (profile?.role !== 'teacher') {
-    return <DashboardLayout title="My Exams"><div>Access denied</div></DashboardLayout>
-  }
+  if (!user || !profile) return null
 
   return (
-    <DashboardLayout title="My Exams">
+    <DashboardLayout title="Exams Management">
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <p className="text-gray-600">Create and manage exams for your classes</p>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="w-4 h-4 mr-2" />Create Exam
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Exam</DialogTitle>
-                <DialogDescription>Add a new exam for your class</DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleCreateExam} className="space-y-4">
-                <div>
-                  <Label>Exam Title *</Label>
-                  <Input 
-                    placeholder="e.g., Mid-Term Mathematics" 
-                    value={examTitle} 
-                    onChange={(e) => setExamTitle(e.target.value)} 
-                    required 
-                  />
-                </div>
-                <div>
-                  <Label>Description</Label>
-                  <Input 
-                    placeholder="Brief description" 
-                    value={examDescription} 
-                    onChange={(e) => setExamDescription(e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <Label>Exam Date *</Label>
-                  <Input 
-                    type="date" 
-                    value={examDate} 
-                    onChange={(e) => setExamDate(e.target.value)} 
-                    required 
-                  />
-                </div>
-                <div>
-                  <Label>Total Marks *</Label>
-                  <Input 
-                    type="number" 
-                    placeholder="e.g., 100" 
-                    value={totalMarks} 
-                    onChange={(e) => setTotalMarks(e.target.value)} 
-                    required 
-                  />
-                </div>
-                <div>
-                  <Label>Class *</Label>
-                  <Select value={selectedClassId} onValueChange={setSelectedClassId} required>
-                    <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
-                    <SelectContent>
-                      {classes.map((cls: any) => (
-                        <SelectItem key={cls.id} value={cls.id}>
-                          {cls.grade_level} {cls.section}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Subject *</Label>
-                  <Select value={selectedSubjectId} onValueChange={setSelectedSubjectId} required>
-                    <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
-                    <SelectContent>
-                      {subjects.map((subj: any) => (
-                        <SelectItem key={subj.id} value={subj.id}>
-                          {subj.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button type="submit" className="w-full" disabled={submitting}>
-                  {submitting ? 'Creating...' : 'Create Exam'}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">End of Term Exams</h1>
+            <p className="text-gray-500">
+              View exam progress by teacher • <Badge variant="outline" className="ml-1">{currentTerm}</Badge>
+            </p>
+          </div>
+          <Button onClick={openAddExamDialog} className="bg-blue-600 hover:bg-blue-700">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Exam
+          </Button>
         </div>
 
+        {/* Stats Cards */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Total Exams
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalExams}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                Submitted
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{submittedExams}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Clock className="h-4 w-4 text-yellow-600" />
+                Pending Entry
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{pendingExams}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Users className="h-4 w-4 text-blue-600" />
+                Teachers
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{teachersWithExams.length}</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Marking Period Status Banner */}
+        {markingPeriod ? (
+          <Card className={`${
+            markingPeriod.results_published 
+              ? 'bg-blue-50 border-blue-200' 
+              : markingPeriod.is_active 
+                ? 'bg-green-50 border-green-200' 
+                : 'bg-amber-50 border-amber-200'
+          }`}>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center gap-4">
+                  <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
+                    markingPeriod.results_published 
+                      ? 'bg-blue-100' 
+                      : markingPeriod.is_active 
+                        ? 'bg-green-100' 
+                        : 'bg-amber-100'
+                  }`}>
+                    {markingPeriod.results_published ? (
+                      <CheckCircle className="h-5 w-5 text-blue-600" />
+                    ) : markingPeriod.is_active ? (
+                      <Unlock className="h-5 w-5 text-green-600" />
+                    ) : (
+                      <Lock className="h-5 w-5 text-amber-600" />
+                    )}
+                  </div>
+                  <div>
+                    <p className={`font-medium ${
+                      markingPeriod.results_published 
+                        ? 'text-blue-800' 
+                        : markingPeriod.is_active 
+                          ? 'text-green-800' 
+                          : 'text-amber-800'
+                    }`}>
+                      {markingPeriod.term} {markingPeriod.academic_year}
+                      {markingPeriod.results_published && ' - Results Published ✓'}
+                      {!markingPeriod.results_published && markingPeriod.is_active && ' - Marking Open'}
+                      {!markingPeriod.results_published && !markingPeriod.is_active && ' - Marking Closed'}
+                    </p>
+                    <p className={`text-sm ${
+                      markingPeriod.results_published 
+                        ? 'text-blue-600' 
+                        : markingPeriod.is_active 
+                          ? 'text-green-600' 
+                          : 'text-amber-600'
+                    }`}>
+                      {markingPeriod.results_published 
+                        ? 'Students and parents can view their exam results' 
+                        : markingPeriod.is_active 
+                          ? `Teachers can enter marks until ${new Date(markingPeriod.end_date).toLocaleDateString()}`
+                          : 'Open the marking period to allow teachers to enter marks'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {/* Publish/Unpublish Button - Always visible */}
+                  {markingPeriod.results_published ? (
+                    <Button 
+                      variant="destructive" 
+                      size="sm"
+                      onClick={handleUnpublishResults}
+                    >
+                      <Lock className="h-4 w-4 mr-1" />
+                      Unpublish
+                    </Button>
+                  ) : (
+                    <Button 
+                      size="sm" 
+                      className="bg-green-600 hover:bg-green-700"
+                      onClick={() => setIsPublishDialogOpen(true)}
+                    >
+                      <Send className="h-4 w-4 mr-1" />
+                      Publish
+                    </Button>
+                  )}
+                  <Link href="/dashboard/exam-periods">
+                    <Button variant="outline" size="sm">
+                      <Settings className="h-4 w-4 mr-1" />
+                      Periods
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="bg-amber-50 border-amber-200">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center">
+                    <Lock className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-amber-800">
+                      No Marking Period Set
+                    </p>
+                    <p className="text-sm text-amber-600">
+                      Create and open a marking period to allow marks entry.
+                    </p>
+                  </div>
+                </div>
+                <Link href="/dashboard/exam-periods">
+                  <Button className="bg-amber-600 hover:bg-amber-700">
+                    <CalendarClock className="h-4 w-4 mr-2" />
+                    Create Period
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Search and Filters */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Search</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="max-w-md">
-              <Label>Search Exams</Label>
-              <Input
-                placeholder="Search by title, class, or subject..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+          <CardContent className="pt-6">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Search by teacher name, class, or subject..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Select 
+                value={statusFilter} 
+                onValueChange={(value: 'all' | 'submitted' | 'pending' | 'grading') => setStatusFilter(value)}
+              >
+                <SelectTrigger className="w-full sm:w-[200px]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Exams</SelectItem>
+                  <SelectItem value="submitted">
+                    <span className="flex items-center gap-2">
+                      <CheckCircle className="h-3 w-3 text-green-600" />
+                      Submitted
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="grading">
+                    <span className="flex items-center gap-2">
+                      <Clock className="h-3 w-3 text-blue-600" />
+                      In Progress
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="pending">
+                    <span className="flex items-center gap-2">
+                      <Clock className="h-3 w-3 text-yellow-600" />
+                      Not Started
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
-            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Total Exams</CardTitle></CardHeader>
-            <CardContent><div className="text-4xl font-bold">{filteredExams.length}</div></CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
-            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Fully Graded</CardTitle></CardHeader>
-            <CardContent><div className="text-4xl font-bold">{filteredExams.filter(e => e.graded_count === e.total_students && e.total_students > 0).length}</div></CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-yellow-500 to-yellow-600 text-white">
-            <CardHeader><CardTitle className="text-sm font-medium opacity-90">Pending Grading</CardTitle></CardHeader>
-            <CardContent><div className="text-4xl font-bold">{filteredExams.filter(e => e.graded_count < e.total_students).length}</div></CardContent>
-          </Card>
-        </div>
-
+        {/* Teacher Cards */}
         <div className="space-y-4">
-          {filteredExams.length === 0 ? (
+          {filteredTeachers.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-gray-500">
-                {searchQuery ? 'No exams match your search' : 'No exams created yet. Click "Create Exam" to get started.'}
+                {searchQuery 
+                  ? 'No teachers match your search' 
+                  : statusFilter !== 'all'
+                    ? `No exams with status "${statusFilter === 'submitted' ? 'Submitted' : statusFilter === 'grading' ? 'In Progress' : 'Not Started'}"`
+                    : 'No teachers found. Assign teachers to classes first.'}
               </CardContent>
             </Card>
           ) : (
-            filteredExams.map((exam) => {
-              const isExpanded = expandedExam === exam.id
-              
+            filteredTeachers.map((teacher) => {
+              const isExpanded = expandedTeacher === teacher.id
+              const submittedCount = teacher.exams.filter(e => e.is_submitted).length
+              const gradedCount = teacher.exams.filter(e => e.graded_count === e.total_students && e.total_students > 0).length
+
               return (
-                <Card 
-                  key={exam.id} 
-                  className="cursor-pointer hover:shadow-md transition-all"
-                >
+                <Card key={teacher.id} className="overflow-hidden">
+                  {/* Teacher Header */}
                   <CardHeader 
-                    className="py-4"
-                    onClick={() => handleExpandExam(exam.id, exam.class_id)}
+                    className="py-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => handleExpandTeacher(teacher.id)}
                   >
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <FileText className="w-5 h-5 text-blue-600" />
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-lg">
+                          {teacher.full_name.charAt(0).toUpperCase()}
+                        </div>
                         <div>
-                          <CardTitle className="text-lg">{exam.title}</CardTitle>
-                          <p className="text-sm text-gray-500 mt-1">
-                            {exam.class_name} • {exam.subject_name} • {exam.exam_date}
-                          </p>
+                          <CardTitle className="text-lg">{teacher.full_name}</CardTitle>
+                          <p className="text-sm text-gray-500">@{teacher.username}</p>
+                          <div className="flex gap-4 mt-2 text-sm text-gray-600">
+                            <span className="flex items-center gap-1">
+                              <GraduationCap className="h-4 w-4" />
+                              {teacher.totalClasses} classes
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <BookOpen className="h-4 w-4" />
+                              {teacher.totalSubjects} subjects
+                            </span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <Badge variant="outline">{exam.total_marks} marks</Badge>
-                        {exam.graded_count === exam.total_students && exam.total_students > 0 ? (
-                          <Badge className="bg-green-100 text-green-800">
-                            <CheckCircle className="w-3 h-3 mr-1" />Graded
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-yellow-100 text-yellow-800">
-                            <Clock className="w-3 h-3 mr-1" />{exam.graded_count}/{exam.total_students}
-                          </Badge>
-                        )}
+                        <div className="text-right">
+                          <div className="text-sm font-medium">
+                            {teacher.exams.length} exams
+                          </div>
+                          <div className="flex gap-2 mt-1">
+                            {submittedCount > 0 && (
+                              <Badge className="bg-green-100 text-green-800 text-xs">
+                                {submittedCount} submitted
+                              </Badge>
+                            )}
+                            {teacher.exams.length - submittedCount > 0 && (
+                              <Badge className="bg-yellow-100 text-yellow-800 text-xs">
+                                {teacher.exams.length - submittedCount} pending
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
                         {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                       </div>
                     </div>
                   </CardHeader>
 
+                  {/* Teacher's Exams List */}
                   {isExpanded && (
-                    <CardContent className="space-y-4 border-t pt-4">
-                      <div className="flex justify-between items-center">
-                        <p className="text-sm font-semibold">Enter Student Grades</p>
-                        <div className="flex gap-2">
-                          <Button 
-                            size="sm" 
-                            onClick={(e) => { e.stopPropagation(); handleSaveGrades(exam.id) }} 
-                            disabled={savingGrades}
-                            className="bg-green-600 hover:bg-green-700"
-                          >
-                            <Save className="w-3 h-3 mr-1" />
-                            {savingGrades ? 'Saving...' : 'Save Grades'}
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="destructive" 
-                            onClick={(e) => { e.stopPropagation(); handleDeleteExam(exam.id, exam.title) }}
-                          >
-                            <Trash2 className="w-3 h-3 mr-1" />Delete
-                          </Button>
-                        </div>
-                      </div>
+                    <CardContent className="border-t pt-4 space-y-3 bg-gray-50">
+                      {teacher.exams.length === 0 ? (
+                        <p className="text-center text-gray-500 py-4">
+                          No exams assigned yet. Exams are created when teacher is assigned to classes.
+                        </p>
+                      ) : (
+                        teacher.exams.map((exam) => {
+                          const isExamExpanded = expandedExam === exam.id
+                          const gradingProgress = exam.total_students > 0 
+                            ? (exam.graded_count / exam.total_students) * 100 
+                            : 0
 
-                      <div className="border rounded-lg max-h-96 overflow-y-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Student Name</TableHead>
-                              <TableHead>Username</TableHead>
-                              <TableHead className="w-32">Marks</TableHead>
-                              <TableHead>Percentage</TableHead>
-                              <TableHead>Grade</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {studentGrades.map((sg) => (
-                              <TableRow key={sg.student_id}>
-                                <TableCell className="font-medium">{sg.student_name}</TableCell>
-                                <TableCell className="text-sm text-gray-500">{sg.username}</TableCell>
-                                <TableCell>
-                                  <Input 
-                                    type="number" 
-                                    min="0" 
-                                    max={exam.total_marks} 
-                                    value={sg.marks_obtained || ''} 
-                                    onChange={(e) => handleMarksChange(sg.student_id, e.target.value, exam.total_marks)} 
-                                    className="w-24"
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  {sg.percentage !== null ? `${sg.percentage.toFixed(1)}%` : '-'}
-                                </TableCell>
-                                <TableCell>
-                                  {sg.grade && (
-                                    <Badge className={
-                                      sg.grade === 'A' ? 'bg-green-100 text-green-800' :
-                                      sg.grade === 'B' ? 'bg-blue-100 text-blue-800' :
-                                      sg.grade === 'C' ? 'bg-yellow-100 text-yellow-800' :
-                                      sg.grade === 'D' ? 'bg-orange-100 text-orange-800' :
-                                      'bg-red-100 text-red-800'
-                                    }>
-                                      {sg.grade}
+                          return (
+                            <Card key={exam.id} className="bg-white">
+                              <CardHeader 
+                                className="py-3 cursor-pointer hover:bg-gray-50"
+                                onClick={() => handleExpandExam(exam.id, exam.class_id)}
+                              >
+                                <div className="flex justify-between items-center">
+                                  <div className="flex items-center gap-3">
+                                    <FileText className="w-4 h-4 text-blue-600" />
+                                    <div>
+                                      <p className="font-medium">{exam.title}</p>
+                                      <p className="text-xs text-gray-500">
+                                        {exam.class_name} • {exam.subject_name}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="outline" className="text-xs">
+                                      {currentTerm}
                                     </Badge>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
+                                    {exam.is_submitted ? (
+                                      <Badge className="bg-green-100 text-green-800 text-xs">
+                                        <CheckCircle className="w-3 h-3 mr-1" />
+                                        Submitted
+                                      </Badge>
+                                    ) : (
+                                      <Badge className="bg-yellow-100 text-yellow-800 text-xs">
+                                        <Clock className="w-3 h-3 mr-1" />
+                                        Pending
+                                      </Badge>
+                                    )}
+                                    {exam.exam_paper_url && (
+                                      <Badge className="bg-blue-100 text-blue-800 text-xs">
+                                        PDF
+                                      </Badge>
+                                    )}
+                                    {isExamExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                  </div>
+                                </div>
+                                {/* Progress bar */}
+                                <div className="mt-2">
+                                  <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                    <span>Marks entered</span>
+                                    <span>{exam.graded_count}/{exam.total_students}</span>
+                                  </div>
+                                  <Progress value={gradingProgress} className="h-1.5" />
+                                </div>
+                              </CardHeader>
+
+                              {isExamExpanded && (
+                                <CardContent className="pt-0 pb-3 border-t">
+                                  {/* Exam details */}
+                                  <div className="grid grid-cols-2 gap-2 mb-3 text-sm">
+                                    <div>
+                                      <span className="text-gray-500">Exam Date:</span>{' '}
+                                      {new Date(exam.exam_date).toLocaleDateString()}
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Total Marks:</span>{' '}
+                                      {exam.total_marks}
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex gap-2 mb-3">
+                                    {exam.exam_paper_url && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          window.open(exam.exam_paper_url!, '_blank')
+                                        }}
+                                      >
+                                        <Download className="w-4 h-4 mr-2" />
+                                        View Exam Paper
+                                      </Button>
+                                    )}
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleDeleteExam(exam.id, exam.title)
+                                      }}
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      Delete Exam
+                                    </Button>
+                                  </div>
+
+                                  {/* Student Results */}
+                                  <div className="border rounded-lg max-h-60 overflow-y-auto">
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead className="text-xs">Student</TableHead>
+                                          <TableHead className="text-xs text-center">Marks</TableHead>
+                                          <TableHead className="text-xs text-center">%</TableHead>
+                                          <TableHead className="text-xs text-center">Grade</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {studentResults.length === 0 ? (
+                                          <TableRow>
+                                            <TableCell colSpan={4} className="text-center text-gray-500 text-sm">
+                                              No students
+                                            </TableCell>
+                                          </TableRow>
+                                        ) : (
+                                          studentResults.map((result) => (
+                                            <TableRow key={result.student_id}>
+                                              <TableCell className="text-sm">{result.student_name}</TableCell>
+                                              <TableCell className="text-center text-sm">
+                                                {result.marks_obtained !== null 
+                                                  ? `${result.marks_obtained}/${exam.total_marks}` 
+                                                  : <span className="text-gray-400">-</span>}
+                                              </TableCell>
+                                              <TableCell className="text-center text-sm">
+                                                {result.percentage !== null 
+                                                  ? `${result.percentage.toFixed(0)}%` 
+                                                  : '-'}
+                                              </TableCell>
+                                              <TableCell className="text-center">
+                                                {result.grade ? (
+                                                  <Badge className={`text-xs ${
+                                                    result.grade === 'A' ? 'bg-green-100 text-green-800' :
+                                                    result.grade === 'B' ? 'bg-blue-100 text-blue-800' :
+                                                    result.grade === 'C' ? 'bg-yellow-100 text-yellow-800' :
+                                                    result.grade === 'D' ? 'bg-orange-100 text-orange-800' :
+                                                    'bg-red-100 text-red-800'
+                                                  }`}>
+                                                    {result.grade}
+                                                  </Badge>
+                                                ) : '-'}
+                                              </TableCell>
+                                            </TableRow>
+                                          ))
+                                        )}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                </CardContent>
+                              )}
+                            </Card>
+                          )
+                        })
+                      )}
                     </CardContent>
                   )}
                 </Card>
@@ -562,6 +1033,111 @@ export default function TeacherExamsPage() {
             })
           )}
         </div>
+
+        {/* Publish Results Dialog */}
+        <Dialog open={isPublishDialogOpen} onOpenChange={setIsPublishDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Publish Exam Results</DialogTitle>
+              <DialogDescription asChild>
+                <div>
+                  Are you sure you want to publish results for {markingPeriod?.term} {markingPeriod?.academic_year}?
+                  <div className="mt-3 text-sm">
+                    <p className="font-medium mb-2">Once published:</p>
+                    <ul className="list-disc ml-5 space-y-1">
+                      <li>Students and parents can view exam results</li>
+                      <li>The marking period will be automatically closed</li>
+                      <li>You can unpublish later if needed</li>
+                    </ul>
+                  </div>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsPublishDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handlePublishResults}
+                disabled={isPublishing}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {isPublishing ? 'Publishing...' : 'Publish Results'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Exam Dialog */}
+        <Dialog open={isAddExamDialogOpen} onOpenChange={setIsAddExamDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add New Exam</DialogTitle>
+              <DialogDescription>
+                Create a new exam for a class and subject
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Class & Subject *</Label>
+                <Select value={selectedClassSubject} onValueChange={setSelectedClassSubject}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select class and subject" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classSubjectOptions.map((opt) => (
+                      <SelectItem 
+                        key={`${opt.class_id}|${opt.subject_id}`} 
+                        value={`${opt.class_id}|${opt.subject_id}`}
+                      >
+                        {opt.class_name} - {opt.subject_name} ({opt.teacher_name})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Exam Title *</Label>
+                <Input
+                  value={newExamTitle}
+                  onChange={(e) => setNewExamTitle(e.target.value)}
+                  placeholder="e.g., End of Term 1 Exam"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Exam Date *</Label>
+                  <Input
+                    type="date"
+                    value={newExamDate}
+                    onChange={(e) => setNewExamDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Total Marks</Label>
+                  <Input
+                    type="number"
+                    value={newExamMarks}
+                    onChange={(e) => setNewExamMarks(e.target.value)}
+                    min="1"
+                    max="1000"
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddExamDialogOpen(false)} disabled={isCreatingExam}>
+                Cancel
+              </Button>
+              <Button onClick={handleAddExam} disabled={isCreatingExam}>
+                {isCreatingExam ? 'Creating...' : 'Create Exam'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   )

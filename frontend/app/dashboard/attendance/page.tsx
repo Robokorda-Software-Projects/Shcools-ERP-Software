@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
@@ -13,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
-import { Loader2, CheckCircle, XCircle, Clock, Users } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, Clock, Users, CloudOff, Cloud, Wifi } from 'lucide-react'
 
 interface Student {
   id: string
@@ -40,6 +41,12 @@ export default function AttendanceRegisterPage() {
   const [saving, setSaving] = useState(false)
   const [selectedClass, setSelectedClass] = useState<string>('')
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0])
+  
+  // Auto-save state
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [pendingChanges, setPendingChanges] = useState(false)
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -230,6 +237,10 @@ export default function AttendanceRegisterPage() {
     const newAttendance = new Map(attendance)
     newAttendance.set(studentId, status)
     setAttendance(newAttendance)
+    
+    // Trigger auto-save
+    setPendingChanges(true)
+    triggerAutoSave(newAttendance)
   }
 
   const markAllPresent = () => {
@@ -238,6 +249,10 @@ export default function AttendanceRegisterPage() {
       newAttendance.set(student.id, 'present')
     })
     setAttendance(newAttendance)
+    
+    // Trigger auto-save
+    setPendingChanges(true)
+    triggerAutoSave(newAttendance)
     toast.success('Marked all students as present')
   }
 
@@ -249,7 +264,93 @@ export default function AttendanceRegisterPage() {
       newRemarks.delete(studentId)
     }
     setRemarks(newRemarks)
+    
+    // Trigger auto-save for remarks too
+    setPendingChanges(true)
+    triggerAutoSaveRemarks(newRemarks)
   }
+
+  // Auto-save function with debounce
+  const triggerAutoSave = useCallback((attendanceData: Map<string, string>) => {
+    // Clear existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current)
+    }
+    
+    setAutoSaveStatus('idle')
+    
+    // Set new timeout for 1 second
+    autoSaveTimeoutRef.current = setTimeout(async () => {
+      await performAutoSave(attendanceData, remarks)
+    }, 1000)
+  }, [remarks, selectedClass, selectedDate, profile])
+
+  const triggerAutoSaveRemarks = useCallback((remarksData: Map<string, string>) => {
+    // Clear existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current)
+    }
+    
+    setAutoSaveStatus('idle')
+    
+    // Set new timeout for 1 second
+    autoSaveTimeoutRef.current = setTimeout(async () => {
+      await performAutoSave(attendance, remarksData)
+    }, 1000)
+  }, [attendance, selectedClass, selectedDate, profile])
+
+  const performAutoSave = async (attendanceData: Map<string, string>, remarksData: Map<string, string>) => {
+    if (attendanceData.size === 0 || !selectedClass || !profile) {
+      return
+    }
+
+    try {
+      setAutoSaveStatus('saving')
+
+      const attendanceRecords = Array.from(attendanceData.entries()).map(([studentId, status]) => ({
+        student_id: studentId,
+        class_id: selectedClass,
+        date: selectedDate,
+        status: status,
+        remarks: remarksData.get(studentId) || null,
+        marked_by: profile?.id,
+        school_id: profile?.school_id,
+      }))
+
+      // Delete existing records for this date/class
+      await supabase
+        .from('attendance')
+        .delete()
+        .eq('class_id', selectedClass)
+        .eq('date', selectedDate)
+
+      // Insert new records
+      const { error } = await supabase.from('attendance').insert(attendanceRecords)
+
+      if (error) throw error
+
+      setAutoSaveStatus('saved')
+      setLastSaved(new Date())
+      setPendingChanges(false)
+      
+      // Reset to idle after 3 seconds
+      setTimeout(() => {
+        setAutoSaveStatus('idle')
+      }, 3000)
+    } catch (error: any) {
+      console.error('Auto-save error:', error)
+      setAutoSaveStatus('error')
+    }
+  }
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const saveAttendance = async () => {
     if (attendance.size === 0) {
@@ -346,7 +447,7 @@ export default function AttendanceRegisterPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Users className="h-4 w-4" />
-                Total Students
+                Total Students in Class
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -455,6 +556,60 @@ export default function AttendanceRegisterPage() {
                     className="bg-blue-600 h-2 rounded-full transition-all"
                     style={{ width: `${(stats.marked / stats.total) * 100}%` }}
                   />
+                </div>
+              </div>
+            )}
+
+            {/* Auto-save Status Banner */}
+            {selectedClass && students.length > 0 && (
+              <div className={`flex items-center justify-between px-4 py-2 rounded-lg border ${
+                autoSaveStatus === 'saving' ? 'bg-blue-50 border-blue-200' :
+                autoSaveStatus === 'saved' ? 'bg-green-50 border-green-200' :
+                autoSaveStatus === 'error' ? 'bg-red-50 border-red-200' :
+                'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-center gap-2">
+                  {autoSaveStatus === 'saving' && (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                      <span className="text-sm text-blue-700">Saving changes...</span>
+                    </>
+                  )}
+                  {autoSaveStatus === 'saved' && (
+                    <>
+                      <Cloud className="h-4 w-4 text-green-600" />
+                      <span className="text-sm text-green-700">
+                        All changes saved automatically
+                        {lastSaved && (
+                          <span className="text-green-500 ml-1">
+                            at {lastSaved.toLocaleTimeString()}
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  )}
+                  {autoSaveStatus === 'error' && (
+                    <>
+                      <CloudOff className="h-4 w-4 text-red-600" />
+                      <span className="text-sm text-red-700">
+                        Failed to save - please save manually
+                      </span>
+                    </>
+                  )}
+                  {autoSaveStatus === 'idle' && pendingChanges && (
+                    <>
+                      <Wifi className="h-4 w-4 text-gray-500" />
+                      <span className="text-sm text-gray-600">Changes pending...</span>
+                    </>
+                  )}
+                  {autoSaveStatus === 'idle' && !pendingChanges && attendance.size > 0 && (
+                    <>
+                      <Cloud className="h-4 w-4 text-gray-500" />
+                      <span className="text-sm text-gray-600">
+                        Auto-save enabled - your progress is automatically saved
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             )}

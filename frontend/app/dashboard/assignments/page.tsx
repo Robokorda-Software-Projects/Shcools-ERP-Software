@@ -63,6 +63,16 @@ interface Class {
   section: string
 }
 
+interface ClassSubjectAssignment {
+  id: string
+  class_id: string
+  subject_id: string
+  teacher_id: string
+  class_name: string
+  subject_name: string
+  student_count?: number
+}
+
 interface Submission {
   id: string
   assignment_id: string
@@ -85,6 +95,7 @@ export default function AssignmentsPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [classes, setClasses] = useState<Class[]>([])
+  const [teacherClassSubjects, setTeacherClassSubjects] = useState<ClassSubjectAssignment[]>([])
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -100,6 +111,7 @@ export default function AssignmentsPage() {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
+    class_subject_id: '', // Changed: now using combined class-subject assignment
     subject_id: '',
     class_id: '',
     due_date: '',
@@ -128,7 +140,7 @@ export default function AssignmentsPage() {
     try {
       setLoading(true)
 
-      // Fetch subjects
+      // Fetch subjects (for filtering)
       let subjectQuery = supabase.from('subjects').select('id, name').order('name')
       if (profile?.role !== 'super_admin' && profile?.school_id) {
         subjectQuery = subjectQuery.eq('school_id', profile.school_id)
@@ -136,7 +148,7 @@ export default function AssignmentsPage() {
       const { data: subjectData } = await subjectQuery
       setSubjects(subjectData || [])
 
-      // Fetch classes
+      // Fetch classes (for filtering)
       let classQuery = supabase
         .from('classes')
         .select('id, grade_level, section')
@@ -146,6 +158,64 @@ export default function AssignmentsPage() {
       }
       const { data: classData } = await classQuery
       setClasses(classData || [])
+
+      // Fetch teacher's class-subject assignments (for creating assignments)
+      // This ensures teachers can ONLY create assignments for their assigned class-subjects
+      if (profile?.role === 'teacher') {
+        const { data: csaData } = await supabase
+          .from('class_subject_assignments')
+          .select(`
+            id,
+            class_id,
+            subject_id,
+            teacher_id,
+            classes(grade_level, section),
+            subjects(name)
+          `)
+          .eq('teacher_id', profile.id)
+        
+        if (csaData) {
+          const formatted = csaData.map((csa: any) => ({
+            id: csa.id,
+            class_id: csa.class_id,
+            subject_id: csa.subject_id,
+            teacher_id: csa.teacher_id,
+            class_name: csa.classes ? `${csa.classes.grade_level} ${csa.classes.section}` : 'Unknown',
+            subject_name: csa.subjects?.name || 'Unknown'
+          }))
+          setTeacherClassSubjects(formatted)
+        }
+      } else if (profile?.role === 'school_admin' || profile?.role === 'super_admin') {
+        // Admins can see all class-subject assignments for their school
+        let csaQuery = supabase
+          .from('class_subject_assignments')
+          .select(`
+            id,
+            class_id,
+            subject_id,
+            teacher_id,
+            classes(grade_level, section),
+            subjects(name)
+          `)
+        
+        if (profile?.role === 'school_admin' && profile?.school_id) {
+          csaQuery = csaQuery.eq('classes.school_id', profile.school_id)
+        }
+        
+        const { data: csaData } = await csaQuery
+        
+        if (csaData) {
+          const formatted = csaData.map((csa: any) => ({
+            id: csa.id,
+            class_id: csa.class_id,
+            subject_id: csa.subject_id,
+            teacher_id: csa.teacher_id,
+            class_name: csa.classes ? `${csa.classes.grade_level} ${csa.classes.section}` : 'Unknown',
+            subject_name: csa.subjects?.name || 'Unknown'
+          }))
+          setTeacherClassSubjects(formatted)
+        }
+      }
 
       await fetchAssignments()
     } catch (error: any) {
@@ -303,10 +373,19 @@ export default function AssignmentsPage() {
       return
     }
 
-    if (!formData.subject_id || !formData.class_id) {
-      toast.error('Please select subject and class')
+    if (!formData.class_subject_id) {
+      toast.error('Please select a class and subject')
       return
     }
+
+    // Get the class_id and subject_id from the selected class-subject assignment
+    const selectedClassSubject = teacherClassSubjects.find(cs => cs.id === formData.class_subject_id)
+    if (!selectedClassSubject) {
+      toast.error('Invalid class-subject selection')
+      return
+    }
+
+    const { class_id, subject_id } = selectedClassSubject
 
     try {
       setUploading(true)
@@ -333,8 +412,8 @@ export default function AssignmentsPage() {
         .insert({
           title: formData.title,
           description: formData.description,
-          subject_id: formData.subject_id,
-          class_id: formData.class_id,
+          subject_id: subject_id,
+          class_id: class_id,
           file_url: urlData.publicUrl,
           file_name: selectedFile.name,
           due_date: formData.due_date,
@@ -351,7 +430,7 @@ export default function AssignmentsPage() {
       const { data: students } = await supabase
         .from('students')
         .select('id')
-        .eq('class_id', formData.class_id)
+        .eq('class_id', class_id)
 
       if (students && students.length > 0) {
         const submissionRecords = students.map(student => ({
@@ -446,8 +525,7 @@ export default function AssignmentsPage() {
     setFormData({
       title: '',
       description: '',
-      subject_id: '',
-      class_id: '',
+      class_subject_id: '',
       due_date: '',
       total_marks: '100',
     })
@@ -595,46 +673,24 @@ export default function AssignmentsPage() {
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label>Subject *</Label>
-                          <Select
-                            value={formData.subject_id}
-                            onValueChange={(value) => setFormData({ ...formData, subject_id: value })}
-                            disabled={uploading}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select subject" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {subjects.map((subject) => (
-                                <SelectItem key={subject.id} value={subject.id}>
-                                  {subject.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>Class *</Label>
-                          <Select
-                            value={formData.class_id}
-                            onValueChange={(value) => setFormData({ ...formData, class_id: value })}
-                            disabled={uploading}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select class" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {classes.map((cls) => (
-                                <SelectItem key={cls.id} value={cls.id}>
-                                  {cls.grade_level} {cls.section}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                      <div className="space-y-2">
+                        <Label>Class & Subject *</Label>
+                        <Select
+                          value={formData.class_subject_id}
+                          onValueChange={(value) => setFormData({ ...formData, class_subject_id: value })}
+                          disabled={uploading}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select class and subject" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {teacherClassSubjects.map((cs) => (
+                              <SelectItem key={cs.id} value={cs.id}>
+                                {cs.class_name} - {cs.subject_name} ({cs.student_count} students)
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
@@ -801,6 +857,19 @@ export default function AssignmentsPage() {
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
                               <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedAssignment(assignment)
+                                  fetchSubmissions(assignment.id)
+                                  setSubmissionsDialogOpen(true)
+                                }}
+                                className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                              >
+                                <Users className="h-4 w-4 mr-1" />
+                                Grade
+                              </Button>
+                              <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => window.open(assignment.file_url, '_blank')}
@@ -899,18 +968,18 @@ export default function AssignmentsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {submission.status === 'graded' ? (
+                          {submission.status === 'graded' && !gradingData.has(submission.student_id) ? (
                             <span className="font-medium">
                               {submission.marks_obtained}/{selectedAssignment?.total_marks}
                             </span>
-                          ) : submission.status === 'submitted' ? (
+                          ) : (submission.status === 'submitted' || gradingData.has(submission.student_id)) ? (
                             <Input
                               type="number"
                               placeholder="0"
                               className="w-20"
                               min="0"
                               max={selectedAssignment?.total_marks}
-                              value={gradingData.get(submission.student_id)?.marks || ''}
+                              value={gradingData.get(submission.student_id)?.marks ?? submission.marks_obtained ?? ''}
                               onChange={(e) => updateGradingData(submission.student_id, 'marks', e.target.value)}
                             />
                           ) : (
@@ -918,13 +987,13 @@ export default function AssignmentsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {submission.status === 'graded' ? (
+                          {submission.status === 'graded' && !gradingData.has(submission.student_id) ? (
                             <span className="text-sm">{submission.feedback || 'No feedback'}</span>
-                          ) : submission.status === 'submitted' ? (
+                          ) : (submission.status === 'submitted' || gradingData.has(submission.student_id)) ? (
                             <Input
                               placeholder="Feedback..."
                               className="w-full"
-                              value={gradingData.get(submission.student_id)?.feedback || ''}
+                              value={gradingData.get(submission.student_id)?.feedback ?? submission.feedback ?? ''}
                               onChange={(e) => updateGradingData(submission.student_id, 'feedback', e.target.value)}
                             />
                           ) : (
@@ -932,21 +1001,25 @@ export default function AssignmentsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {submission.status === 'submitted' && (
+                          {(submission.status === 'submitted' || gradingData.has(submission.student_id)) && (
                             <Button
                               size="sm"
                               onClick={() => gradeSubmission(submission.id, submission.student_id)}
                               className="bg-green-600 hover:bg-green-700"
                             >
                               <CheckCircle className="h-4 w-4 mr-1" />
-                              Grade
+                              {gradingData.has(submission.student_id) ? 'Update' : 'Grade'}
                             </Button>
                           )}
-                          {submission.status === 'graded' && (
-                            <Badge variant="secondary">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Graded
-                            </Badge>
+                          {submission.status === 'graded' && !gradingData.has(submission.student_id) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => updateGradingData(submission.student_id, 'marks', submission.marks_obtained?.toString() || '')}
+                            >
+                              <Edit className="h-4 w-4 mr-1" />
+                              Edit
+                            </Button>
                           )}
                         </TableCell>
                       </TableRow>

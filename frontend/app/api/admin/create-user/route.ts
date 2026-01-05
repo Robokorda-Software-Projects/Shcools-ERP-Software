@@ -5,15 +5,35 @@ import { createClient } from '@supabase/supabase-js'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { email, password, full_name, phone, school_id, username } = body
+    const { 
+      email, 
+      password, 
+      full_name, 
+      phone, 
+      school_id, 
+      username,
+      role = 'school_admin', // Default to school_admin for backwards compatibility
+      employee_id,
+      id_number,  // ID Number (used as password for staff)
+      department
+    } = body
 
-    console.log('🔐 Creating admin user:', { email, username, school_id })
+    console.log('🔐 Creating user:', { email, username, school_id, role })
 
     // Validate required fields
     if (!email || !password || !full_name || !school_id || !username) {
       return NextResponse.json({ 
         success: false, 
         error: 'Missing required fields' 
+      }, { status: 400 })
+    }
+
+    // Validate role
+    const validRoles = ['school_admin', 'teacher', 'enrollment_officer', 'student', 'parent']
+    if (!validRoles.includes(role)) {
+      return NextResponse.json({ 
+        success: false, 
+        error: `Invalid role. Must be one of: ${validRoles.join(', ')}` 
       }, { status: 400 })
     }
 
@@ -48,7 +68,7 @@ export async function POST(request: NextRequest) {
       user_metadata: { 
         full_name: full_name,
         phone: phone,
-        role: 'school_admin',
+        role: role,
         school_id: school_id
       }
     })
@@ -74,22 +94,30 @@ export async function POST(request: NextRequest) {
     // Wait a moment for auth user to be fully created
     await new Promise(resolve => setTimeout(resolve, 500))
 
+    // Build profile data - only include fields that have values
+    const profileData: Record<string, any> = {
+      id: authData.user.id,
+      email: email,
+      username: username,
+      full_name: full_name,
+      role: role,
+      school_id: school_id,
+      account_status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+
+    // Add optional fields if provided
+    if (phone) profileData.phone_number = phone
+    if (employee_id) profileData.id_number = employee_id // Using id_number for EC Number
+    if (id_number && !employee_id) profileData.id_number = id_number // Direct id_number if provided
+    // Note: department field doesn't exist in profiles table, would need to be added
+
     // Create profile using service role (bypasses RLS)
     console.log('🔐 Creating profile...')
-    const { data: profileData, error: profileError } = await supabaseAdmin
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .insert({
-        id: authData.user.id,
-        email: email,
-        username: username,
-        full_name: full_name,
-        phone_number: phone,
-        role: 'school_admin',
-        school_id: school_id,
-        account_status: 'active',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
+      .insert(profileData)
       .select()
       .single()
 
@@ -111,14 +139,14 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    console.log('✅ Profile created successfully:', profileData)
+    console.log('✅ Profile created successfully:', profile)
 
     return NextResponse.json({ 
       success: true, 
       data: {
         user_id: authData.user.id,
         email: authData.user.email,
-        profile: profileData
+        profile: profile
       }
     })
 
