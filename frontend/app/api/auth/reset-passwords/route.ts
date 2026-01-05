@@ -1,7 +1,6 @@
 // app/api/auth/reset-passwords/route.ts
-'use server'
-
 import { createClient } from '@supabase/supabase-js'
+import { NextRequest, NextResponse } from 'next/server'
 
 // Create an admin client with service role key
 const supabaseAdmin = createClient(
@@ -15,7 +14,7 @@ const supabaseAdmin = createClient(
   }
 )
 
-export async function resetPassword(email: string, newPassword: string) {
+async function resetPassword(email: string, newPassword: string) {
   try {
     // Use admin API to update user password
     const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
@@ -82,5 +81,31 @@ export async function resetAllTestPasswords() {
     return { success: true, results, total: testAccounts.length }
   } catch (err: any) {
     return { error: err.message }
+  }
+}
+
+// POST endpoint
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { action, email, newPassword } = body
+
+    if (action === 'reset-single' && email && newPassword) {
+      return NextResponse.json(await resetPassword(email, newPassword))
+    }
+
+    if (action === 'reset-all-test') {
+      return NextResponse.json(await resetAllTestPasswords())
+    }
+
+    return NextResponse.json(
+      { error: 'Invalid action or missing parameters' },
+      { status: 400 }
+    )
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err.message },
+      { status: 500 }
+    )
   }
 }
