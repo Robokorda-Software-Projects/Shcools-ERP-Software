@@ -1,16 +1,18 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-)
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  )
+}
 
 interface StudentRow {
   fullName: string
@@ -86,7 +88,8 @@ async function processRow(
   schoolId: string,
   enrolledBy: string,
   uploadId: string,
-  rowNumber: number
+  rowNumber: number,
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Validate required fields
@@ -298,6 +301,7 @@ async function processRow(
 }
 
 export async function POST(request: NextRequest) {
+  const supabaseAdmin = getSupabaseAdmin()
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -342,7 +346,7 @@ export async function POST(request: NextRequest) {
     const errors: any[] = []
 
     for (let i = 0; i < rows.length; i++) {
-      const result = await processRow(rows[i], schoolId, enrolledBy, uploadId, i + 1)
+      const result = await processRow(rows[i], schoolId, enrolledBy, uploadId, i + 1, supabaseAdmin)
 
       if (result.success) {
         successCount++

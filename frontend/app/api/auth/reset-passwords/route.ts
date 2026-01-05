@@ -2,19 +2,21 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-// Create an admin client with service role key
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-)
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  )
+}
 
 async function resetPassword(email: string, newPassword: string) {
+  const supabaseAdmin = getSupabaseAdmin()
   try {
     // Use admin API to update user password
     const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
@@ -37,7 +39,8 @@ async function resetPassword(email: string, newPassword: string) {
   }
 }
 
-export async function resetAllTestPasswords() {
+async function resetAllTestPasswords() {
+  const supabaseAdmin = getSupabaseAdmin()
   try {
     // Get all test accounts
     const { data: testUsers, error: fetchError } = await supabaseAdmin.auth.admin.listUsers()

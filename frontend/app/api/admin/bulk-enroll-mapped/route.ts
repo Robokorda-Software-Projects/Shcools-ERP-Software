@@ -1,16 +1,18 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-)
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  )
+}
 
 interface MappedStudentData {
   rowNumber: number
@@ -57,7 +59,8 @@ async function processStudent(
   schoolId: string,
   schoolCode: string,
   enrolledBy: string,
-  uploadId: string
+  uploadId: string,
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>
 ): Promise<{ success: boolean; error?: string; studentName?: string }> {
   try {
     // Validate required fields
@@ -359,6 +362,7 @@ async function processStudent(
 }
 
 export async function POST(request: NextRequest) {
+  const supabaseAdmin = getSupabaseAdmin()
   try {
     const body = await request.json()
     const { students, schoolId, enrolledBy, fileName } = body
@@ -398,7 +402,7 @@ export async function POST(request: NextRequest) {
 
     // Process all students
     const results = await Promise.all(
-      students.map(student => processStudent(student, schoolId, schoolCode, enrolledBy, uploadId))
+      students.map(student => processStudent(student, schoolId, schoolCode, enrolledBy, uploadId, supabaseAdmin))
     )
 
     const successful = results.filter(r => r.success).length
