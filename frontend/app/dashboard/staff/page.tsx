@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
@@ -75,6 +75,14 @@ interface NewStaffForm {
 }
 
 export default function StaffManagementPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <StaffManagementContent />
+    </Suspense>
+  )
+}
+
+function StaffManagementContent() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()

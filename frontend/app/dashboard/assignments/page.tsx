@@ -526,6 +526,8 @@ export default function AssignmentsPage() {
       title: '',
       description: '',
       class_subject_id: '',
+      subject_id: '',
+      class_id: '',
       due_date: '',
       total_marks: '100',
     })

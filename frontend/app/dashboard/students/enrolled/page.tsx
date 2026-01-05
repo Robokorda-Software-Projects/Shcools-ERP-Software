@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
@@ -105,6 +105,14 @@ interface EditableFields {
 }
 
 export default function EnrolledStudentsPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <EnrolledStudentsContent />
+    </Suspense>
+  )
+}
+
+function EnrolledStudentsContent() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()

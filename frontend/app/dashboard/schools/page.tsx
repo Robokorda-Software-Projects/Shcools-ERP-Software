@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
@@ -195,6 +195,14 @@ interface SchoolFullDetails extends SchoolWithStats {
 }
 
 export default function SchoolsPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <SchoolsPageContent />
+    </Suspense>
+  )
+}
+
+function SchoolsPageContent() {
   const { user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
