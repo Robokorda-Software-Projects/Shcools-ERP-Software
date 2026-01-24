@@ -1,10 +1,17 @@
 /**
  * Password & Security Utilities
  * Handles secure password generation, hashing, and validation
+ * Note: Some functions are server-only (marked with 'use server')
  */
 
 import bcrypt from 'bcryptjs'
-import crypto from 'crypto'
+
+// Use dynamic import for crypto (Node.js module)
+let crypto: typeof import('crypto')
+if (typeof window === 'undefined') {
+  // @ts-ignore - Server-side only
+  crypto = require('crypto')
+}
 
 /**
  * Generate a cryptographically secure random password
@@ -38,11 +45,16 @@ export function generateSecurePassword(length: number = 16): string {
 /**
  * Generate a temporary password (expires after first use)
  * Format: [Random-Random-Random] for readability
+ * SERVER-ONLY: Requires crypto module
  */
 export function generateTemporaryPassword(): {
   password: string
   expiresInHours: number
 } {
+  if (typeof window !== 'undefined') {
+    throw new Error('generateTemporaryPassword must be called on the server')
+  }
+  
   const segments = [
     crypto.randomBytes(3).toString('hex').toUpperCase(),
     crypto.randomBytes(3).toString('hex').toUpperCase(),
@@ -147,8 +159,13 @@ export async function isPasswordReused(newPassword: string, passwordHistory: str
 /**
  * Generate a safe username from name
  * Format: firstname_lastname_random
+ * SERVER-ONLY: Requires crypto module
  */
 export function generateSafeUsername(fullName: string, idNumber?: string): string {
+  if (typeof window !== 'undefined') {
+    throw new Error('generateSafeUsername must be called on the server')
+  }
+  
   const names = fullName.toLowerCase().split(' ').filter(n => n.length > 0)
   
   if (names.length === 0) {
@@ -168,8 +185,13 @@ export function generateSafeUsername(fullName: string, idNumber?: string): strin
 
 /**
  * Generate random username for specific role
+ * SERVER-ONLY: Requires crypto module
  */
 export function generateRoleBasedUsername(role: string, schoolCode: string = 'SCH'): string {
+  if (typeof window !== 'undefined') {
+    throw new Error('generateRoleBasedUsername must be called on the server')
+  }
+  
   const rolePrefix = role.substring(0, 2).toUpperCase()
   const timestamp = Date.now().toString(36).toUpperCase()
   const random = crypto.randomBytes(3).toString('hex').toUpperCase()
@@ -190,8 +212,13 @@ export function sanitizeInput(input: string): string {
 
 /**
  * Encrypt sensitive data using AES-256
+ * SERVER-ONLY: Requires crypto module
  */
 export function encryptSensitiveData(data: string, encryptionKey: string): string {
+  if (typeof window !== 'undefined') {
+    throw new Error('encryptSensitiveData must be called on the server')
+  }
+  
   const iv = crypto.randomBytes(16)
   const key = crypto.createHash('sha256').update(encryptionKey).digest()
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
@@ -205,8 +232,13 @@ export function encryptSensitiveData(data: string, encryptionKey: string): strin
 
 /**
  * Decrypt sensitive data
+ * SERVER-ONLY: Requires crypto module
  */
 export function decryptSensitiveData(encrypted: string, encryptionKey: string): string {
+  if (typeof window !== 'undefined') {
+    throw new Error('decryptSensitiveData must be called on the server')
+  }
+  
   const [ivHex, encryptedData] = encrypted.split(':')
   const iv = Buffer.from(ivHex, 'hex')
   const key = crypto.createHash('sha256').update(encryptionKey).digest()
@@ -220,8 +252,13 @@ export function decryptSensitiveData(encrypted: string, encryptionKey: string): 
 
 /**
  * Generate 2FA backup codes
+ * SERVER-ONLY: Requires crypto module
  */
 export function generateBackupCodes(count: number = 10): string[] {
+  if (typeof window !== 'undefined') {
+    throw new Error('generateBackupCodes must be called on the server')
+  }
+  
   const codes: string[] = []
   for (let i = 0; i < count; i++) {
     codes.push(crypto.randomBytes(4).toString('hex').toUpperCase())
